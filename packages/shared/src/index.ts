@@ -12,7 +12,9 @@ export {
   comparePassword,
   signJWT,
   verifyJWT,
+  reencryptWithNewKey,
   type EncryptedPayload,
+  type EncryptedPayloadV2,
   type JWTClaims,
 } from "./crypto/index.js";
 export {
@@ -28,6 +30,7 @@ export {
   LLMAuthError,
   LLMRateLimitError,
   PIIViolationError,
+  FatalConfigError,
   grpcStatusFromError,
   toStructuredLog,
 } from "./errors/index.js";
@@ -74,9 +77,14 @@ export {
   BaseConfigSchema,
   type BaseConfig,
 } from "./config/index.js";
-export { validateSecrets } from "./config/validate-secrets.js";
+export { validateSecrets, validateJWTSecret } from "./config/validate-secrets.js";
 export { getSecret, loadSecretsIntoEnv } from "./config/secrets.js";
 export { RateLimiter } from "./rate-limiter.js";
 export { TokenBudget, extractNamespace } from "./budget/index.js";
-export { getServerCredentials, getClientCredentials } from "./tls.js";
+export { getServerCredentials, getClientCredentials, createMTLSServerCredentials, createMTLSClientCredentials, watchCertificateRotation } from "./tls.js";
 export { getPool, closePool } from "./db.js";
+export { AsyncSemaphore } from "./grpc/async-semaphore.js";
+export { GrpcServer, getServiceClient } from "./grpc/server.js";
+export type { GrpcServerConfig, GrpcServiceConfig } from "./grpc/server.js";
+export { executeSandboxTool, isAllowedTool } from "./sandbox/executor.js";
+export type { SandboxRequest, SandboxResponse } from "./sandbox/executor.js";

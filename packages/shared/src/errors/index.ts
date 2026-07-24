@@ -136,6 +136,13 @@ export class LLMRateLimitError extends Error {
   }
 }
 
+export class FatalConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FatalConfigError";
+  }
+}
+
 export class PIIViolationError extends Error {
   public readonly toolName: string;
   public readonly detectedPatterns: string[];

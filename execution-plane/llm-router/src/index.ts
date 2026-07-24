@@ -15,7 +15,7 @@ import pino from "pino";
 import { get_encoding } from "tiktoken";
 import OpenAI from "openai";
 import CircuitBreaker from "opossum";
-import { RateLimiter, extractNamespace, getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor } from "@e-gaop/shared";
+import { RateLimiter, extractNamespace, getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, AsyncSemaphore } from "@e-gaop/shared";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
@@ -69,27 +69,7 @@ const FALLBACK_CHAIN = process.env.LLM_FALLBACK_CHAIN
 // ─── Concurrency Semaphore ─────────────────────────────────────────────────
 
 const MAX_CONCURRENT = parseInt(process.env.LLM_MAX_CONCURRENT || "10", 10);
-let activeConcurrent = 0;
-const concurrentWaiters: Array<() => void> = [];
-
-async function acquireConcurrency(): Promise<void> {
-  if (activeConcurrent < MAX_CONCURRENT) {
-    activeConcurrent++;
-    return;
-  }
-  return new Promise<void>((resolve) => {
-    concurrentWaiters.push(resolve);
-  });
-}
-
-function releaseConcurrency(): void {
-  const next = concurrentWaiters.shift();
-  if (next) {
-    next();
-  } else {
-    activeConcurrent--;
-  }
-}
+const concurrency = new AsyncSemaphore(MAX_CONCURRENT);
 
 // ─── Retry with exponential backoff ────────────────────────────────────────
 
@@ -334,7 +314,7 @@ server.addService(llmService.service, {
     // Acquire concurrency slot — limits simultaneous calls to upstream API
     let acquired = false;
     try {
-      await acquireConcurrency();
+      await concurrency.acquire();
       acquired = true;
 
       // Map messages to OpenAI format, preserving tool_calls on assistant messages
@@ -425,10 +405,10 @@ server.addService(llmService.service, {
 
       callback({
         code,
-        message: `LLM generation failed: ${err.message}`,
+        message: "LLM generation failed",
       });
     } finally {
-      if (acquired) releaseConcurrency();
+      if (acquired) concurrency.release();
     }
   },
 });

@@ -75,7 +75,6 @@ const TOOL_REGISTRY: Record<string, ToolConfig> = {
 const SANDBOX_TOOLS = new Set(["code_interpreter", "file_read", "file_write", "database_query"]);
 
 const SAFE_PATH_RE = /^[a-zA-Z0-9_\/\.\-]+$/;
-const BLOCKED_SQL_RE = /\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|EXEC|EXECUTE|PRAGMA|ATTACH|DETACH|VACUUM|REINDEX|REPLACE|LOAD|SELECT\s+.*\s+FROM\s+.*\s+INTO)\b/i;
 
 function isPrivateIP(ip: string): boolean {
   if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|169\.254\.)/.test(ip)) return true;
@@ -83,36 +82,37 @@ function isPrivateIP(ip: string): boolean {
   return false;
 }
 
-function buildSandboxCommand(toolName: string, args: any): string {
+function validateSandboxArgs(toolName: string, args: any): string | null {
   switch (toolName) {
     case "code_interpreter": {
       const code = args?.code || args?.script || "";
-      if (!code) return "echo 'no code provided'";
-      const encoded = Buffer.from(code).toString("base64");
-      const tmpFile = `/tmp/agent_code_${Date.now()}.py`;
-      return `echo '${encoded}' | base64 --decode > ${tmpFile} && python3 ${tmpFile}; rm -f ${tmpFile}`;
+      if (typeof code !== "string" || code.length === 0) return "No code provided";
+      if (code.length > 10000) return "Code exceeds 10,000 character limit";
+      return null;
     }
     case "file_read": {
       const p = args?.path || "";
-      if (!p) return "echo 'no path provided'";
-      if (!SAFE_PATH_RE.test(p) || p.includes("..")) return "echo 'invalid path'";
-      return `cat '${p}'`;
+      if (typeof p !== "string" || !p) return "No path provided";
+      if (!SAFE_PATH_RE.test(p) || p.includes("..")) return "Invalid path";
+      return null;
     }
     case "file_write": {
       const p = args?.path || "";
+      if (typeof p !== "string" || !p) return "No path provided";
+      if (!SAFE_PATH_RE.test(p) || p.includes("..")) return "Invalid path";
       const c = args?.content || "";
-      if (!p) return "echo 'no path provided'";
-      if (!SAFE_PATH_RE.test(p) || p.includes("..")) return "echo 'invalid path'";
-      return `cat > '${p}'`;
+      if (typeof c !== "string" || c.length > 1000000) return "Content too large";
+      return null;
     }
     case "database_query": {
       const q = args?.query || "";
-      if (!q) return "echo 'no query provided'";
-      if (BLOCKED_SQL_RE.test(q)) return "echo 'forbidden SQL operation'";
-      return `sqlite3 /tmp/data.db '${q.replace(/'/g, "''")}'`;
+      if (typeof q !== "string" || !q) return "No query provided";
+      if (q.length > 10000) return "Query too long";
+      if (/[;&|`$(){}!<>]/.test(q)) return "Query contains blocked characters";
+      return null;
     }
     default:
-      return `echo 'unsupported sandbox tool: ${toolName}'`;
+      return `Unknown tool: ${toolName}`;
   }
 }
 
@@ -196,10 +196,18 @@ server.addService(toolService.service, {
         fetchOpts.body = JSON.stringify(args);
       }
 
-      // Sandbox tools: override method to POST and body to sandbox command format
+      // Sandbox tools: send structured { tool, args } instead of shell command
       if (SANDBOX_TOOLS.has(tool_name)) {
+        const validationError = validateSandboxArgs(tool_name, args);
+        if (validationError) {
+          return callback(null, {
+            status: "failed",
+            error_message: `Input validation failed: ${validationError}`,
+            latency_ms: Date.now() - startTime,
+          });
+        }
         fetchOpts.method = "POST";
-        fetchOpts.body = JSON.stringify({ command: buildSandboxCommand(tool_name, args) });
+        fetchOpts.body = JSON.stringify({ tool: tool_name, args });
       }
 
       const response = await fetch(url, fetchOpts);
