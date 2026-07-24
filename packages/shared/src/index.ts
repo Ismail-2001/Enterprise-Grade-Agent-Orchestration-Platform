@@ -88,3 +88,7 @@ export { GrpcServer, getServiceClient } from "./grpc/server.js";
 export type { GrpcServerConfig, GrpcServiceConfig } from "./grpc/server.js";
 export { executeSandboxTool, isAllowedTool } from "./sandbox/executor.js";
 export type { SandboxRequest, SandboxResponse } from "./sandbox/executor.js";
+export { K8sSandboxRuntime } from "./sandbox/k8s-sandbox-runtime.js";
+export type { SandboxSpec, Sandbox } from "./sandbox/k8s-sandbox-runtime.js";
+export { createAuditEntry, getAuditChain, verifyAuditChain } from "./audit/index.js";
+export type { AuditEntry, AuditEventType, AuditSeverity, AuditActor, AuditTarget, AuditAction } from "./audit/index.js";

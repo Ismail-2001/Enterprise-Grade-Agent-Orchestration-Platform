@@ -1,129 +1,105 @@
 # =============================================================================
-# E-GAOP Helm Values — Production
+# E-GAOP Helm Values — Production Override
 # =============================================================================
-# Secrets MUST come from External Secrets Operator — never hardcoded here
+# Usage: helm install egaop . --values values.yaml --values values-production.yaml
 # =============================================================================
 
 global:
-  imageRegistry: ghcr.io
-  imagePullSecrets:
-    - name: ghcr-pull-secret
-  storageClass: premium-rwo
+  environment: production
 
-ingress:
-  enabled: true
-  className: nginx
-  adminHost: admin.egaop.dev
-  apiHost: api.egaop.dev
-  certManagerIssuer: letsencrypt-prod
-  rateLimit: "100"
+# ─── TLS / cert-manager ─────────────────────────────────────────────────────
+tls:
+  certManager:
+    enabled: true
 
+# ─── External Secrets Operator (required in production) ─────────────────────
 externalSecrets:
   enabled: true
   vault:
-    address: "https://vault.egaop-ops:8200"
-    path: "secret/data/egaop/production"
-    secretsPath: "secret/data/egaop/production"
+    address: "https://vault.egaop.io:8200"
+    path: "secret/data/egaop"
+    kubernetesMountPath: "kubernetes"
+    kubernetesRole: "egaop"
+    secretsPath: "secret/data/egaop"
 
+# ─── Redis HA (Sentinel) ────────────────────────────────────────────────────
+redis:
+  architecture: replication
+  sentinel:
+    enabled: true
+    masterSet: egaop-master
+    quorum: 2
+  replica:
+    replicaCount: 3
+    persistence:
+      size: 10Gi
+      enabled: true
+      storageClass: fast-ssd
+
+# ─── PostgreSQL HA ──────────────────────────────────────────────────────────
+postgresql:
+  primary:
+    persistence:
+      size: 50Gi
+      enabled: true
+      storageClass: fast-ssd
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+  readReplicas:
+    name: read
+    replicaCount: 2
+    persistence:
+      size: 50Gi
+      enabled: true
+      storageClass: fast-ssd
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+# ─── Temporal HA ────────────────────────────────────────────────────────────
+temporal:
+  server:
+    replicaCount: 3
+    persistence:
+      size: 20Gi
+      enabled: true
+      storageClass: fast-ssd
+
+# ─── Service Replicas (HA) ──────────────────────────────────────────────────
 defaults:
-  replicas: 3
-  resources:
-    requests:
-      cpu: 500m
-      memory: 512Mi
-    limits:
-      cpu: "2"
-      memory: 2Gi
-  podAnnotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9464"
-  topologySpreadConstraints:
-    - maxSkew: 1
-      topologyKey: kubernetes.io/hostname
-      whenUnsatisfiable: DoNotSchedule
-      labelSelector:
-        matchLabels: {}
-
-api-server:
-  replicas: 3
-  resources:
-    requests:
-      cpu: "1"
-      memory: 1Gi
-    limits:
-      cpu: "4"
-      memory: 4Gi
-
-secret-store:
-  replicas: 3
-
-workflow-engine:
-  replicas: 3
-
-llm-router:
-  replicas: 3
-  rateLimitRpm: 100
-  resources:
-    requests:
-      cpu: "1"
-      memory: 1Gi
-    limits:
-      cpu: "4"
-      memory: 4Gi
-
-tool-proxy:
-  replicas: 3
-  rateLimitRpm: 200
-
-sandbox-runtime:
   replicas: 2
   resources:
     requests:
-      cpu: "1"
-      memory: 2Gi
+      cpu: 200m
+      memory: 256Mi
     limits:
-      cpu: "4"
-      memory: 8Gi
+      cpu: "1"
+      memory: 1Gi
 
+api-server:
+  replicas: 3
+secret-store:
+  replicas: 2
+workflow-engine:
+  replicas: 2
+llm-router:
+  replicas: 2
+tool-proxy:
+  replicas: 2
+sandbox-runtime:
+  replicas: 2
 memory-plane:
-  replicas: 3
-  resources:
-    requests:
-      cpu: "1"
-      memory: 2Gi
-    limits:
-      cpu: "4"
-      memory: 8Gi
-
+  replicas: 2
 observability-plane:
-  replicas: 3
-  resources:
-    requests:
-      cpu: "1"
-      memory: 2Gi
-    limits:
-      cpu: "4"
-      memory: 8Gi
-
+  replicas: 2
 admin-console:
-  replicas: 3
-
-postgresql:
-  enabled: true
-  auth:
-    existingSecret: e-gaop-managed-secrets
-  primary:
-    persistence:
-      size: 200Gi
-
-redis:
-  enabled: true
-  architecture: replication
-  master:
-    persistence:
-      size: 50Gi
-
-temporal:
-  enabled: true
-  server:
-    replicaCount: 3
+  replicas: 2

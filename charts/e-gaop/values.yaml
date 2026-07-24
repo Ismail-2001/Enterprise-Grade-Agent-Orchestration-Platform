@@ -35,14 +35,15 @@ externalSecrets:
     secretsPath: "secret/data/egaop"
 
 # ─── Managed secrets (used when externalSecrets.enabled=false) ──────────────
-# For real deployments use External Secrets Operator + Vault instead.
+# WARNING: For development only. Production MUST use External Secrets Operator.
+# Set every field to empty — deploy will fail until you provide real secrets.
 secrets:
-  encryptionKey: "dev-encryption-key-change-me-0000000000000000"
-  jwtSecret: "dev-jwt-secret-change-me-00000000000000000000"
-  databaseUrl: "postgres://egaop:dev-postgres-password@egaop-test-postgresql:5432/egaop"
-  redisPassword: "dev-redis-password"
+  encryptionKey: ""
+  jwtSecret: ""
+  databaseUrl: ""
+  redisPassword: ""
   temporalTlsCert: ""
-  openaiApiKey: "sk-dev-openai-placeholder"
+  openaiApiKey: ""
 
 # ─── Ingress ────────────────────────────────────────────────────────────────
 ingress:
@@ -88,6 +89,19 @@ redis:
     password: "dev-redis-password"
     existingSecret: "egaop-test-e-gaop-managed-secrets"
     existingPasswordKey: redis-password
+  master:
+    persistence:
+      size: 5Gi
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  metrics:
+    enabled: true
   master:
     persistence:
       size: 5Gi
