@@ -74,7 +74,7 @@ const TOOL_REGISTRY: Record<string, ToolConfig> = {
 
 const SANDBOX_TOOLS = new Set(["code_interpreter", "file_read", "file_write", "database_query"]);
 
-const SAFE_PATH_RE = /^[a-zA-Z0-9_\/\.\-]+$/;
+const SAFE_PATH_RE = /^[a-zA-Z0-9_/.-]+$/;
 
 function isPrivateIP(ip: string): boolean {
   if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|169\.254\.)/.test(ip)) return true;
