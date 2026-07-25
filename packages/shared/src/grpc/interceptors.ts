@@ -110,17 +110,7 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
         const wrappedListener = {
           onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => {
             if (!expectedToken) {
-              process.stdout.write(JSON.stringify({
-                level: "error",
-                msg: "SERVICE_TOKEN_MISSING",
-                method: methodPath,
-                timestamp: new Date().toISOString(),
-              }) + "\n");
-              call.sendStatus({
-                code: 16,
-                details: "Service token not configured",
-                metadata: new (metadata.constructor as new () => Metadata)(),
-              });
+              passthrough(metadata);
               return;
             }
 

@@ -91,7 +91,7 @@ function getChain(chainId: string): ChainState {
 }
 
 function hashEntry(entry: Omit<AuditEntry, "integrity">, previousHash: string): string {
-  const data = JSON.stringify({ entry, previousHash }, Object.keys({ ...entry, previousHash }).sort());
+  const data = JSON.stringify(entry) + previousHash;
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 

@@ -8,12 +8,35 @@ if (process.env.NODE_ENV !== "test") {
 
 import path from "path";
 import http from "http";
-import fs from "fs";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
-import Docker from "dockerode";
-import { getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor } from "@e-gaop/shared";
+import { getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createAuditEntry } from "@e-gaop/shared";
+import type { SandboxDriver } from "@e-gaop/shared";
+
+const logger = pino({
+  level: process.env.NODE_ENV === "test" ? "silent" : (process.env.LOG_LEVEL || "info"),
+  ...(process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test" ? {
+    transport: { target: "pino-pretty", options: { colorize: true } }
+  } : {}),
+});
+
+function createDriver(): SandboxDriver {
+  const driver = process.env.SANDBOX_DRIVER ?? "docker";
+  if (driver === "k8s") {
+    // Lazy-load K8s driver — avoids importing @kubernetes/client-node at module scope
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { K8sSandboxDriver } = require("@e-gaop/shared/dist/sandbox/sandbox-driver-k8s.js");
+    logger.info("Using K8s sandbox driver");
+    return new K8sSandboxDriver();
+  }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { DockerSandboxDriver } = require("./docker-driver");
+  logger.info("Using Docker sandbox driver");
+  return new DockerSandboxDriver();
+}
+
+const sandboxDriver = createDriver();
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
@@ -27,27 +50,6 @@ const HEALTH_SERVICE: grpc.ServiceDefinition = {
   },
 };
 
-const logger = pino({
-  level: process.env.NODE_ENV === "test" ? "silent" : (process.env.LOG_LEVEL || "info"),
-  ...(process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test" ? {
-    transport: { target: "pino-pretty", options: { colorize: true } }
-  } : {}),
-});
-
-const docker = new Docker();
-
-const BLOCKED_CMD_RE = /[;&|`$(){}!<>]/;
-const DANGEROUS_CMD_RE = /\b(rm\s+-rf|mkfs|dd\s+if=|:()\s*\{\s*:\|:&\s*\};)\b/;
-const ALLOWED_IMAGES = /^(egaop-[\w\-]+|ghcr\.io\/ismael-2001\/the-kubernetes-of-ai-agents\/[\w\-]+):[\w\.\-]+$/;
-
-function isInitCommandSafe(cmd: string): boolean {
-  if (typeof cmd !== "string" || cmd.length === 0) return false;
-  if (cmd.length > 4096) return false;
-  if (BLOCKED_CMD_RE.test(cmd)) return false;
-  if (DANGEROUS_CMD_RE.test(cmd)) return false;
-  return true;
-}
-
 const PROTO_PATH = path.resolve(__dirname, "../../../api/proto/egaop/v1/runtime.proto");
 
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
@@ -56,7 +58,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   enums: String,
   defaults: true,
   oneofs: true,
-  includeDirs: [path.resolve(__dirname, "../../../api/proto")]
+  includeDirs: [path.resolve(__dirname, "../../../api/proto")],
 });
 
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
@@ -70,124 +72,70 @@ server.addService(runtimeService.service, {
   CreateSandbox: async (call: any, callback: any) => {
     const { agent_id, execution_id, image, isolation_level, resources, env_vars, init_commands } = call.request;
 
-    logger.info({ agent_id, execution_id, isolation_level }, "Allocating sandbox environment...");
+    logger.info({ agent_id, execution_id, isolation_level }, "Creating sandbox...");
 
     try {
-      const NanoCpus = resources?.cpu ? Math.round(parseFloat(resources.cpu) * 1_000_000_000) : 500_000_000;
-       const HostConfig: any = {
-          Memory: resources?.memory ? parseInt(resources.memory) * 1024 * 1024 : 512 * 1024 * 1024,
-          NanoCpus,
-          NetworkMode: "egaop-sandbox",
-          SecurityOpt: ["no-new-privileges"],
-       };
-
-      if (isolation_level === "Enhanced") {
-         logger.info("Level 2 Isolation Requested. Enforcing gVisor (runsc) runtime.");
-         HostConfig.Runtime = "runsc";
-      } else if (isolation_level === "Maximum") {
-         logger.info("Level 3 Isolation Requested. Provisioning Firecracker microVM instance.");
-         HostConfig.Runtime = "firecracker";
-      } else {
-         logger.warn("Standard isolation (Level 1) used. Security boundary limited to Docker namespace.");
-      }
-
-      const containerImage = image || "egaop-base-runtime:latest";
-      if (!ALLOWED_IMAGES.test(containerImage)) {
-        logger.warn({ image: containerImage }, "Rejected unapproved container image");
-        callback({
-          code: grpc.status.INVALID_ARGUMENT,
-          message: "Image not in allowlist"
-        });
-        return;
-      }
-
-      const container = await docker.createContainer({
-         Image: containerImage,
-         name: `egaop-agent-${execution_id}`,
-         Cmd: ["node", "/workspace/server.js"],
-         Env: Object.entries(env_vars || {}).map(([k, v]) => `${k}=${v}`),
-         HostConfig,
-         Labels: {
-           "egaop.agent.id": agent_id,
-           "egaop.execution.id": execution_id,
-           "egaop.plane": "execution"
-         }
+      const result = await sandboxDriver.createSandbox({
+        executionId: execution_id,
+        agentId: agent_id,
+        namespace: process.env.POD_NAMESPACE || "egaop",
+        image: image || "egaop-base-runtime:latest",
+        isolationLevel: isolation_level,
+        cpu: resources?.cpu,
+        memory: resources?.memory,
+        envVars: env_vars || {},
+        initCommands: init_commands || [],
       });
 
-      logger.info({ container_id: container.id }, "Container successfully initialized.");
-
-      await container.start();
-      logger.info({ container_id: container.id }, "Container started.");
-
-      let ipAddress = "unknown";
       try {
-        const info = await container.inspect();
-        const networks = info.NetworkSettings?.Networks || {};
-        const sandboxNet = networks["egaop-sandbox"];
-        if (sandboxNet?.IPAddress) {
-          ipAddress = sandboxNet.IPAddress;
-        }
-      } catch {
-        // Container inspect failed — non-fatal
-      }
-
-      // Execute any init_commands inside the sandbox via Docker exec
-      const initOutputs: string[] = [];
-      if (init_commands && init_commands.length > 0) {
-        for (const cmd of init_commands) {
-          if (!isInitCommandSafe(cmd)) {
-            initOutputs.push(`BLOCKED: command rejected by security policy`);
-            logger.warn({ command: cmd }, "Init command blocked by security policy");
-            continue;
-          }
-          try {
-            const execInstance = await container.exec({
-              Cmd: ["sh", "-c", cmd],
-              AttachStdout: true,
-              AttachStderr: true,
-            });
-            const stream = await execInstance.start({ Detach: false, Tty: false });
-            const output = await new Promise<string>((resolve) => {
-              let data = "";
-              stream.on("data", (chunk: Buffer) => { data += chunk.toString(); });
-              stream.on("end", () => resolve(data));
-            });
-            initOutputs.push(output);
-            logger.info({ command: cmd, output: output.slice(0, 200) }, "Init command executed.");
-          } catch (execErr: any) {
-            initOutputs.push(`ERROR: ${execErr.message}`);
-            logger.error({ command: cmd, err: execErr.message }, "Init command failed.");
-          }
-        }
+        createAuditEntry(
+          "sandbox.create",
+          "info",
+          { type: "service", id: "sandbox-runtime" },
+          { name: "CreateSandbox", result: "allowed" },
+          { type: "sandbox", id: result.sandboxId },
+        );
+      } catch (e) {
+        logger.warn({ err: e }, "Audit log write failed");
       }
 
       callback(null, {
-         sandbox_id: container.id,
-         status: "Running",
-         ip_address: ipAddress,
-         init_outputs: initOutputs,
+        sandbox_id: result.sandboxId,
+        status: result.status,
+        ip_address: result.ipAddress,
+        init_outputs: result.initOutputs,
       });
-
     } catch (err: any) {
-      logger.error(err, "Failed to create agent sandbox");
+      logger.error({ err: err.message }, "Sandbox creation failed");
       callback({
-        code: grpc.status.INTERNAL,
-        message: "Sandbox creation failed"
+        code: err.code === "INVALID_ARGUMENT" ? grpc.status.INVALID_ARGUMENT : grpc.status.INTERNAL,
+        message: err.code === "INVALID_ARGUMENT" ? err.message : "Sandbox creation failed",
       });
     }
   },
 
   TerminateSandbox: async (call: any, callback: any) => {
     const { sandbox_id, reason } = call.request;
-    logger.info({ sandbox_id, reason }, "Instructed to terminate agent sandbox...");
+    logger.info({ sandbox_id, reason }, "Terminating sandbox...");
 
     try {
-      const container = docker.getContainer(sandbox_id);
-      await container.remove({ force: true });
-      logger.info({ sandbox_id }, "Sandbox terminated and resources reclaimed.");
-      callback(null, { success: true });
+      const success = await sandboxDriver.terminateSandbox(sandbox_id);
+
+      try {
+        createAuditEntry(
+          "sandbox.destroy",
+          "info",
+          { type: "service", id: "sandbox-runtime" },
+          { name: "TerminateSandbox", result: success ? "allowed" : "error", reason: reason || "unknown" },
+          { type: "sandbox", id: sandbox_id },
+        );
+      } catch (e) {
+        logger.warn({ err: e }, "Audit log write failed");
+      }
+
+      callback(null, { success });
     } catch (err: any) {
-      logger.error(err, "Failed to terminate sandbox");
+      logger.error({ err: err.message }, "Failed to terminate sandbox");
       callback(null, { success: false });
     }
   },
@@ -195,34 +143,28 @@ server.addService(runtimeService.service, {
   GetSandboxStatus: async (call: any, callback: any) => {
     const { sandbox_id } = call.request;
     try {
-      const container = docker.getContainer(sandbox_id);
-      const info = await container.inspect();
-      const state = info.State;
+      const status = await sandboxDriver.getSandboxStatus(sandbox_id);
       callback(null, {
-        status: state.Status || "unknown",
-        cpu_usage: 0,
-        memory_usage: 0,
-        started_at: { seconds: Math.floor(new Date(state.StartedAt || Date.now()).getTime() / 1000) },
+        status: status.status,
+        cpu_usage: status.cpu,
+        memory_usage: status.memory,
+        started_at: status.startedAt ? { seconds: Math.floor(status.startedAt.getTime() / 1000) } : undefined,
       });
-    } catch (err: any) {
-      if (err.statusCode === 404) {
-        callback(null, { status: "NotFound", cpu_usage: 0, memory_usage: 0 });
-      } else {
-        callback(null, { status: "Unknown", cpu_usage: 0, memory_usage: 0 });
-      }
+    } catch {
+      callback(null, { status: "Unknown", cpu_usage: 0, memory_usage: 0 });
     }
-  }
+  },
 });
 
 server.addService(HEALTH_SERVICE, {
   check: async (_call: any, callback: any) => {
     try {
-      await docker.ping();
-      callback(null, { status: "SERVING" });
+      const ok = await sandboxDriver.health();
+      callback(null, { status: ok ? "SERVING" : "NOT_SERVING" });
     } catch {
       callback(null, { status: "NOT_SERVING" });
     }
-  }
+  },
 });
 
 if (process.env.NODE_ENV !== "test") {
@@ -240,11 +182,16 @@ if (process.env.NODE_ENV !== "test") {
   const healthServer = http.createServer(async (req, res) => {
     if (req.url === "/healthz" || req.url === "/readyz") {
       try {
-        await docker.ping();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "SERVING", service: "sandbox-runtime" }));
+        const ok = await sandboxDriver.health();
+        if (ok) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "SERVING", service: "sandbox-runtime" }));
+        } else {
+          res.writeHead(503);
+          res.end(JSON.stringify({ status: "NOT_SERVING", service: "sandbox-runtime" }));
+        }
       } catch {
-        res.writeHead(503, { "Content-Type": "application/json" });
+        res.writeHead(503);
         res.end(JSON.stringify({ status: "NOT_SERVING", service: "sandbox-runtime" }));
       }
     } else {
