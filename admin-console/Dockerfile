@@ -1,13 +1,11 @@
 # Stage 1: Build
 FROM node:22-alpine AS builder
-WORKDIR /app
-COPY package.json package-lock.json ./
-COPY admin-console/package.json ./admin-console/
+WORKDIR /app/admin-console
+COPY admin-console/package.json admin-console/package-lock.json ./
 RUN npm ci
-COPY admin-console/ ./admin-console/
+COPY admin-console/ ./
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_PATH=/app/node_modules
-RUN node /app/node_modules/next/dist/bin/next build /app/admin-console
+RUN npx next build
 
 # Stage 2: Production
 FROM node:22-alpine AS runner
