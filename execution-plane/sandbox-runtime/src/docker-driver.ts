@@ -3,7 +3,7 @@ import type { SandboxDriver, SandboxSpec, SandboxResult } from "@e-gaop/shared";
 
 const BLOCKED_CMD_RE = /[;&|`$(){}!<>]/;
 const DANGEROUS_CMD_RE = /\b(rm\s+-rf|mkfs|dd\s+if=|:()\s*\{\s*:\|:&\s*\};)\b/;
-const ALLOWED_IMAGES = /^(egaop-[\w\-]+|ghcr\.io\/ismael-2001\/the-kubernetes-of-ai-agents\/[\w\-]+):[\w\.\-]+$/;
+const ALLOWED_IMAGES = /^(egaop-[\w-]+|ghcr\.io\/ismael-2001\/the-kubernetes-of-ai-agents\/[\w-]+):[\w.-]+$/;
 
 function isInitCommandSafe(cmd: string): boolean {
   if (typeof cmd !== "string" || cmd.length === 0) return false;

@@ -1,5 +1,3 @@
-import Docker from "dockerode";
-
 const mockContainer = {
   id: "abc123def456",
   start: jest.fn().mockResolvedValue(undefined),
