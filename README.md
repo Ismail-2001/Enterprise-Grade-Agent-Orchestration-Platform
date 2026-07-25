@@ -1,9 +1,57 @@
-# The Kubernetes of AI Agents
+<div align="center">
+
+# E-GAOP — The Kubernetes of AI Agents
+
+**A production-grade orchestration platform for LLM-powered agents at scale.**
+Multi-tenant isolation, policy enforcement, cost budgets, and full observability — treating every agent like an untrusted, metered, observable workload, the way Kubernetes treats containers.
+
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
+[![Node](https://img.shields.io/badge/node-24-339933?logo=node.js&logoColor=white)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/unit%20tests-259%20passing%20(local)-brightgreen)](#testing--quality)
+[![Status](https://img.shields.io/badge/status-demo%20%2F%20pilot--ready-yellow)](#current-status)
+
+[Live Status](#current-status) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Known Limitations](#known-limitations) · [For Hiring Managers](#for-hiring-managers--clients)
+
+</div>
+
+---
+
+> **Every number on this page is checked against running code, not aspiration.** This project publishes its own [README writing rule](docs/README-GUIDELINES.md) after a real incident where a marketing rewrite silently dropped verified limitations — the corrected, evidence-backed version you're reading now is the standing baseline. See the full [production-readiness assessment](docs/production-readiness-final.md) for the 53-item scored breakdown behind every claim below.
 
 > **CI: actively executing on GitHub** -- 259 unit tests pass across 10 workspaces, 0 CVEs, 0 lint errors. Pipeline runs on push/PR to main.
 > **npm audit: 0 vulnerabilities** (from 19 -- all fixed). OPA CrashLoopBackOff: **resolved** (5 root causes fixed). Typecheck: **10/10 workspaces** (ambient declarations for missing `.d.ts`). Secrets: **never written to disk**.
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+---
+
+## Table of Contents
+
+- [For Hiring Managers & Clients](#for-hiring-managers--clients)
+- [Current Status](#current-status)
+- [Why Another Agent Framework?](#why-another-agent-framework)
+- [Architecture](#architecture)
+- [Capabilities](#capabilities)
+- [Quick Start](#quick-start)
+- [Project Structure](#project-structure)
+- [Production Runbook](#production-runbook)
+- [Known Limitations](#known-limitations)
+- [Benchmarks](#benchmarks)
+- [Evals](#evals)
+- [About the Developer](#about-the-developer)
+- [License](#license)
+
+---
+
+## For Hiring Managers & Clients
+
+**What this project demonstrates, in 60 seconds:**
+
+- **Systems design at production scope** — a 10-service, 5-plane architecture (control, execution, memory, policy, observability) with real inter-service auth, connection pooling, circuit breakers, and durable workflow orchestration (Temporal) — not a single-file agent demo.
+- **Security-first engineering** — OPA/Rego policy-as-code, AES-256-GCM secrets at rest, JWT + gRPC service-to-service auth, PII blocking, and a documented, honest accounting of what's *not* yet hardened (see [Known Limitations](#known-limitations)).
+- **Operational maturity** — migrations with up/down rollback, automated backup/restore (verified 3/3 cycles), Prometheus/Grafana alerting, OpenTelemetry tracing, and a full production runbook.
+- **Engineering discipline over marketing** — every capability below is labeled `Verified`, `Partial`, or `Not done`. Gaps aren't hidden; they're the most credible part of the document. The [README-GUIDELINES.md](docs/README-GUIDELINES.md) is a real rule this repo enforces at PR review.
+
+If you're evaluating this for a role or an engagement, the fastest path is: [Current Status](#current-status) for the honest scorecard, [Architecture](#architecture) for the system design, and [production-readiness-final.md](docs/production-readiness-final.md) for the full verification trail.
 
 ---
 
@@ -38,6 +86,60 @@ Most agent frameworks stop at "hello world" -- a single agent calling a single L
 ---
 
 ## Architecture
+
+Five planes, each with a single responsibility — the same separation-of-concerns Kubernetes applies to compute, now applied to agent execution.
+
+```mermaid
+flowchart TB
+    subgraph CP["🧠 CONTROL PLANE"]
+        direction LR
+        API["API Server<br/>(REST + gRPC, CORS allowlist)"]
+        WF["Workflow Engine<br/>(Temporal)"]
+        SEC["Secret Store<br/>(AES-256-GCM)"]
+    end
+
+    subgraph EP["⚙️ EXECUTION PLANE"]
+        direction LR
+        LLM["LLM Router<br/>(fallback chain, circuit breaker,<br/>semaphore max 10)"]
+        TOOL["Tool Proxy<br/>(PII blocks, rate-limited)"]
+        SBX["Sandbox Runtime<br/>(Docker isolation)"]
+    end
+
+    subgraph DP["💾 DATA / MEMORY PLANE"]
+        direction LR
+        REDIS[("Redis<br/>(standalone)")]
+        PG[("PostgreSQL<br/>(entity + migrations)")]
+        PGB["PgBouncer<br/>(txn pool, 25 conn)"]
+    end
+
+    subgraph PP["🛡️ POLICY PLANE"]
+        OPA["OPA / Rego<br/>(tag 0.68.0, 5 bugs fixed)"]
+    end
+
+    subgraph OP["📊 OBSERVABILITY PLANE"]
+        direction LR
+        OTEL["OTel Collector<br/>(traces)"]
+        PROM["Prometheus<br/>(metrics)"]
+        GRAF["Grafana<br/>(5 alert rules)"]
+    end
+
+    CP --> EP
+    EP --> DP
+    PGB --> PG
+    CP -.policy check.-> PP
+    EP -.policy check.-> PP
+    CP -.traces/metrics.-> OP
+    EP -.traces/metrics.-> OP
+
+    style CP fill:#1e3a5f,color:#fff
+    style EP fill:#2d4a3e,color:#fff
+    style DP fill:#4a3a1e,color:#fff
+    style PP fill:#4a1e2d,color:#fff
+    style OP fill:#3a1e4a,color:#fff
+```
+
+<details>
+<summary><strong>Detailed ASCII architecture</strong> (full annotations, terminal-friendly)</summary>
 
 ```
 +-------------------------------------------------------------------------------------------+
@@ -81,6 +183,8 @@ Most agent frameworks stop at "hello world" -- a single agent calling a single L
 +-------------------------------------------------------------------------------------------+
 ```
 
+</details>
+
 ### Request Flow
 
 ```
@@ -94,7 +198,11 @@ Client -> API Server (JWT auth) -> OPA Policy (deny/allow) -> Workflow Engine (T
 
 ## Capabilities
 
-### Security
+Every row below carries a status: **Verified** (tested against running code), **Partial** (works with a documented caveat), or **Not done**. Click a section to expand.
+
+<details open>
+<summary><strong>🔒 Security</strong></summary>
+
 | Feature | Implementation | Status |
 |---------|---------------|--------|
 | **gRPC service auth** | Every internal RPC carries a signed `x-service-token` header, validated server-side | Verified |
@@ -111,7 +219,11 @@ Client -> API Server (JWT auth) -> OPA Policy (deny/allow) -> Workflow Engine (T
 | **TLS encryption** | gRPC traffic encrypted via TLS (server cert + CA). **mTLS (client-cert verification) is disabled** due to `@grpc/grpc-js` v1.14.4 bug. **Compensating control**: `x-service-token` app-layer auth wired into all 9 services via shared interceptors. | Partial (mTLS off, app-layer auth active) |
 | **Penetration testing** | No injection testing, fuzzing, or red-team exercise performed | Not done |
 
-### Reliability
+</details>
+
+<details>
+<summary><strong>♻️ Reliability</strong></summary>
+
 | Feature | Implementation | Status |
 |---------|---------------|--------|
 | **LLM fallback chain** | `gpt-4o -> gpt-4o-mini -> gpt-3.5-turbo` with opossum circuit breaker (30s timeout, 50% error threshold, 30s reset). **Rate-limit errors isolated** from circuit breaker | Verified |
@@ -124,13 +236,19 @@ Client -> API Server (JWT auth) -> OPA Policy (deny/allow) -> Workflow Engine (T
 | **Redis HA** | Single Redis instance deployed. Code has conditional sentinel support but no sentinel containers are configured. | Not deployed |
 | **Concurrency ceiling** | Sustains 10 concurrent agents at 100% success (confirmed after semaphore fix). Previously degraded at >=12. | Stable at 10 |
 
-### Observability
+</details>
+
+<details>
+<summary><strong>📊 Observability</strong></summary>
+
 | Tool | Access | Purpose |
 |:---|:---|:---|
 | Grafana | `http://localhost:3003` | 5 Grafana alert rules (verified firing) + 10 Prometheus alert rules defined |
 | Prometheus | `http://localhost:9091` | Metrics scraping (10s interval), RED metrics per service |
 | OTel Collector | `:4317` (gRPC) / `:4318` (HTTP) | Distributed tracing across all services with W3C context propagation |
 | Logs | `docker compose logs <service>` | Structured JSON with `traceId`, `namespace`, `service` fields (pino) |
+
+</details>
 
 ### Cost Control
 - Per-namespace daily token budgets (hard stop at `RESOURCE_EXHAUSTED`)
@@ -318,8 +436,19 @@ The platform includes an automated eval suite (`evals/`) with 19 golden cases ac
 
 ---
 
+## About the Developer
+
+Built by **Ismail Sajid** — Agentic AI Engineer freelancing under AutoCommerce Agency, based in Karachi, Pakistan. Focus areas: multi-agent systems, LangGraph, CrewAI, MCP integrations, and RAG architectures, backed by full-stack delivery (Next.js, React, TypeScript, FastAPI). Anthropic MCP–certified; completing a BS in AI at FAST-NUCES Karachi.
+
+This repository is the flagship project in that portfolio — it's built to be read end-to-end by an engineer, not skimmed as a marketing page.
+
+- GitHub: [Ismail-2001](https://github.com/Ismail-2001)
+- <!-- add LinkedIn / Upwork / email here -->
+
+---
+
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
