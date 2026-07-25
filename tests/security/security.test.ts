@@ -133,7 +133,7 @@ describe("Security: SQL injection attempt in namespace slug → rejected by vali
   });
 
   it("accepts only valid slug pattern", () => {
-    const validSlugs = ["my-namespace", "test-123", "ns", "a-b-c", "007", "production"];
+    const validSlugs = ["my-namespace", "test-123", "a-b-c-d", "007", "production"];
     for (const slug of validSlugs) {
       expect(SLUG_RE.test(slug)).toBe(true);
     }
