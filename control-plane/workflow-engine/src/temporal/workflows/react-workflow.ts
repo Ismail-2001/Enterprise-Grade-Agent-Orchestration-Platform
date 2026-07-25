@@ -322,7 +322,7 @@ export async function reactWorkflow(
 
         result = {
           status: "CANCELLED",
-          output: output || "Execution cancelled by user",
+           output: "Execution cancelled by user",
           totalCost: `$${totalCost.toFixed(6)}`,
           iterations: currentIteration,
           toolCalls,
@@ -371,7 +371,7 @@ export async function reactWorkflow(
 
         result = {
           status: "ERROR",
-          output: output || `LLM call failed: ${errMsg}`,
+           output: `LLM call failed: ${errMsg}`,
           totalCost: `$${totalCost.toFixed(6)}`,
           iterations: currentIteration,
           toolCalls,
@@ -500,7 +500,7 @@ export async function reactWorkflow(
 
             result = {
               status: "ERROR",
-              output: output || `Tool execution failed: ${errMsg}`,
+               output: `Tool execution failed: ${errMsg}`,
               totalCost: `$${totalCost.toFixed(6)}`,
               iterations: currentIteration,
               toolCalls,

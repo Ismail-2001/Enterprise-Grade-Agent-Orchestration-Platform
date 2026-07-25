@@ -76,8 +76,6 @@ const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
 });
 
-const SAFE_KEY_RE = /^[a-zA-Z0-9_.-]+$/;
-
 function sanitizeKeyComponent(value: string): string {
   if (typeof value !== "string") return "unknown";
   const sanitized = value.replace(/[^a-zA-Z0-9_.-]/g, "_");

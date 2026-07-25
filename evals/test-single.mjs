@@ -1,5 +1,5 @@
 import http from "node:http";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const API = "http://localhost:3001";
 const AUTH = { email: "loadtest5@test.com", password: "LoadTestPass123" };
@@ -32,8 +32,14 @@ function api(method, urlPath, body, token) {
 
 function temporalDescribe(wfId) {
   try {
-    const cmd = `docker exec ${TEMPORAL_CONTAINER} sh -c "temporal workflow describe --address ${TEMPORAL_ADDRESS} --namespace egaop -w ${wfId} -o json 2>/dev/null"`;
-    const out = execSync(cmd, { encoding: "utf-8", timeout: 10000 });
+    const out = execFileSync("docker", [
+      "exec", TEMPORAL_CONTAINER,
+      "temporal", "workflow", "describe",
+      "--address", TEMPORAL_ADDRESS,
+      "--namespace", "egaop",
+      "-w", wfId,
+      "-o", "json",
+    ], { encoding: "utf-8", timeout: 10000, stdio: ["pipe", "pipe", "ignore"] });
     return JSON.parse(out);
   } catch { return null; }
 }

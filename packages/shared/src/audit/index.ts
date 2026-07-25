@@ -1,7 +1,4 @@
-import pino from "pino";
 import crypto from "crypto";
-
-const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 export type AuditEventType =
   | "auth.login"
@@ -79,7 +76,6 @@ interface ChainState {
 }
 
 const chains = new Map<string, ChainState>();
-const CHAIN_FILE = process.env.AUDIT_LOG_PATH || "/var/log/egaop/audit";
 
 function getChain(chainId: string): ChainState {
   let chain = chains.get(chainId);

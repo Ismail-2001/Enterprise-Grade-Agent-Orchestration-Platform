@@ -267,12 +267,11 @@ BEGIN;
 
 COMMIT;
 `;
-  fs.writeFileSync(filepath, template, "utf-8");
+  fs.writeFileSync(filepath, template, { flag: "wx", encoding: "utf-8" });
   console.log(`Created: ${filepath}`);
 
   const downFilepath = path.join(dir, filename.replace(".sql", ".down.sql"));
-  if (!fs.existsSync(downFilepath)) {
-    const downTemplate = `-- Migration ${nextVersion}: ${opts.name} (rollback)
+  const downTemplate = `-- Migration ${nextVersion}: ${opts.name} (rollback)
 -- Created: ${new Date().toISOString()}
 
 BEGIN;
@@ -281,8 +280,11 @@ BEGIN;
 
 COMMIT;
 `;
-    fs.writeFileSync(downFilepath, downTemplate, "utf-8");
+  try {
+    fs.writeFileSync(downFilepath, downTemplate, { flag: "wx", encoding: "utf-8" });
     console.log(`Created: ${downFilepath}`);
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
   }
 }
 

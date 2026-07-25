@@ -244,14 +244,14 @@ export async function ensureAdminUser(repo: UserRepository): Promise<string | nu
   const salt = crypto.randomBytes(16);
   let password = "";
   for (let i = 0; i < 16; i++) {
-    password += chars[salt[i]! % chars.length];
+    password += chars[crypto.randomInt(chars.length)];
   }
 
   // Ensure it has at least one of each required character type
   const required = ["A", "a", "1", "!"];
   for (let i = 0; i < required.length; i++) {
     if (!password.includes(required[i]!)) {
-      const pos = salt[i]! % password.length;
+      const pos = crypto.randomInt(password.length);
       password = password.substring(0, pos) + required[i] + password.substring(pos + 1);
     }
   }

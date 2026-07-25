@@ -22,7 +22,7 @@ const TLS_ENABLED = process.env.TLS_ENABLED === "true";
 const MTLS_ENABLED = TLS_ENABLED && (process.env.MTLS_ENABLED !== "false");
 
 if (TLS_ENABLED) {
-  logger.info({ certDir: CERT_DIR, mtls: MTLS_ENABLED }, "TLS enabled");
+  logger.info({ mtls: MTLS_ENABLED }, "TLS enabled");
 } else {
   logger.warn("TLS disabled — all gRPC traffic is in plaintext");
 }

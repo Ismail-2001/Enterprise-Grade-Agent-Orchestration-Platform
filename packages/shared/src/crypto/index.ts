@@ -157,7 +157,9 @@ export interface JWTClaims {
 
 function base64urlEncode(data: Buffer | string): string {
   const buf = typeof data === "string" ? Buffer.from(data, "utf8") : data;
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  let s = buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_");
+  while (s.endsWith("=")) s = s.slice(0, -1);
+  return s;
 }
 
 function base64urlDecode(str: string): Buffer {

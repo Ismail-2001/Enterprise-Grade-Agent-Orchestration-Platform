@@ -22,6 +22,7 @@ function spawnTool(args, opts) {
 const TOOLS = {
   code_interpreter: async (args) => {
     if (typeof args.code !== "string" || args.code.length > 10000) return { stdout: "", stderr: "Invalid code", exitCode: 1 };
+    if (/[^\x20-\x7E\n\r\t]/.test(args.code)) return { stdout: "", stderr: "Invalid characters in code", exitCode: 1 };
     return spawnTool(["python3", "-c", args.code]);
   },
   file_read: async (args) => {

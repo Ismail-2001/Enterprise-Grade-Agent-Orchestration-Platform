@@ -222,12 +222,8 @@ describe("Security: mTLS enforcement", () => {
   it("gRPC server without TLS rejects connection when TLS_REQUIRED=true", () => {
     const TLS_REQUIRED = true;
     const HAS_CLIENT_CERT = false;
-
-    if (TLS_REQUIRED && !HAS_CLIENT_CERT) {
-      expect(true).toBe(true);
-    } else {
-      expect(false).toBe(true);
-    }
+    const shouldReject = TLS_REQUIRED && !HAS_CLIENT_CERT;
+    expect(shouldReject).toBe(true);
   });
 
   it("gRPC server accepts connection when TLS not required", () => {

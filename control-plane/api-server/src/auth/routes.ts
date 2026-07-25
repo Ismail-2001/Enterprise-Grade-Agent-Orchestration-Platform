@@ -63,7 +63,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   }
 
   // POST /api/auth/register
-  fastify.post("/api/auth/register", async (request, reply) => {
+  fastify.post("/api/auth/register", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "10 minutes",
+        keyGenerator: (request: FastifyRequest) => request.ip ?? "unknown",
+      },
+    },
+  }, async (request, reply) => {
     const body = request.body as { name?: string; email?: string; password?: string };
 
     if (!body?.email || !body?.password || !body?.name) {
@@ -120,7 +128,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /api/auth/login
-  fastify.post("/api/auth/login", async (request, reply) => {
+  fastify.post("/api/auth/login", {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: "1 minute",
+        keyGenerator: (request: FastifyRequest) => request.ip ?? "unknown",
+      },
+    },
+  }, async (request, reply) => {
     const body = request.body as { email?: string; password?: string };
 
     if (!body?.email || !body?.password) {
@@ -187,7 +203,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /api/auth/change-password (protected)
-  fastify.post("/api/auth/change-password", { preHandler: [authenticate] }, async (request, reply) => {
+  fastify.post("/api/auth/change-password", {
+    preHandler: [authenticate],
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "15 minutes",
+        keyGenerator: (request: FastifyRequest) => request.ip ?? "unknown",
+      },
+    },
+  }, async (request, reply) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claims = (request as any).user as JWTClaims;
     const body = request.body as { current_password?: string; new_password?: string };

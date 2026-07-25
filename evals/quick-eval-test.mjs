@@ -1,6 +1,6 @@
 // quick-eval-test.mjs — quick smoke test of the eval pipeline
 import http from "node:http";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const API = "http://localhost:3001";
 const AUTH = { email: "loadtest5@test.com", password: "LoadTestPass123" };
@@ -30,8 +30,15 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function temporalDescribe(wfId) {
   try {
-    const cmd = `docker exec ${TMPL} sh -c "temporal workflow describe --address 172.19.0.10:7233 --namespace egaop -w ${wfId} -o json 2>/dev/null"`;
-    return JSON.parse(execSync(cmd, { encoding: "utf-8", timeout: 5000 }));
+    const out = execFileSync("docker", [
+      "exec", TMPL,
+      "temporal", "workflow", "describe",
+      "--address", "172.19.0.10:7233",
+      "--namespace", "egaop",
+      "-w", wfId,
+      "-o", "json",
+    ], { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"] });
+    return JSON.parse(out);
   } catch { return null; }
 }
 
