@@ -1,3 +1,4 @@
+import { Writable } from "stream";
 import type { SandboxSpec } from "./sandbox-driver.js";
 
 export interface Sandbox {
@@ -152,14 +153,20 @@ export class K8sSandboxRuntime {
     const exec = new k8s.Exec(this.kc);
     return new Promise((resolve, reject) => {
       let output = "";
+      const stdout = new Writable({
+        write(chunk: any, _encoding: string, cb: () => void) {
+          output += chunk.toString();
+          cb();
+        },
+      });
       exec.exec(
         this.namespace,
         podName,
         "runtime",
         command,
-        process.stdout,
-        process.stderr,
-        process.stdin,
+        stdout,
+        stdout,
+        null,
         false,
         (status: any) => {
           if (status?.status === "Success") resolve(output);
