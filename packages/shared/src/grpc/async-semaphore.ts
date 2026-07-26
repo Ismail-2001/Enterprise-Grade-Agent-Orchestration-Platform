@@ -1,26 +1,48 @@
+interface Waiter {
+  resolve: (value: boolean) => void;
+  timer?: NodeJS.Timeout;
+}
+
 export class AsyncSemaphore {
   private current: number;
-  private waiters: Array<() => void> = [];
+  private waiters: Waiter[] = [];
 
   constructor(private max: number) {
     if (max < 1) throw new Error("Semaphore max must be >= 1");
     this.current = 0;
   }
 
-  async acquire(): Promise<void> {
+  /**
+   * Acquire a semaphore slot. Returns `true` if acquired, `false` if
+   * `timeoutMs` elapsed before a slot became available.
+   * When `timeoutMs` is omitted, waits indefinitely.
+   */
+  async acquire(timeoutMs?: number): Promise<boolean> {
     if (this.current < this.max) {
       this.current++;
-      return;
+      return true;
     }
-    return new Promise<void>((resolve) => {
-      this.waiters.push(resolve);
+    return new Promise<boolean>((resolve) => {
+      const waiter: Waiter = { resolve };
+      if (timeoutMs && timeoutMs > 0) {
+        waiter.timer = setTimeout(() => {
+          const idx = this.waiters.indexOf(waiter);
+          if (idx >= 0) {
+            this.waiters.splice(idx, 1);
+            resolve(false);
+          }
+        }, timeoutMs);
+      }
+      this.waiters.push(waiter);
     });
   }
 
   release(): void {
     const next = this.waiters.shift();
     if (next) {
-      next();
+      if (next.timer) clearTimeout(next.timer);
+      next.resolve(true);
+      // current stays the same — the waiter becomes the runner
     } else if (this.current > 0) {
       this.current--;
     }

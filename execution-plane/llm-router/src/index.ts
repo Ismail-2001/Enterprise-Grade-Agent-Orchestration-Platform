@@ -8,6 +8,7 @@ if (process.env.NODE_ENV !== "test") {
 
 import path from "path";
 import http from "http";
+import https from "https";
 import fs from "fs";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
@@ -66,9 +67,14 @@ const FALLBACK_CHAIN = process.env.LLM_FALLBACK_CHAIN
   ? process.env.LLM_FALLBACK_CHAIN.split(",")
   : ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"];
 
+// ─── HTTP keep-alive agent for connection reuse ───────────────────────────
+
+const llmHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+const llmHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+
 // ─── Concurrency Semaphore ─────────────────────────────────────────────────
 
-const MAX_CONCURRENT = parseInt(process.env.LLM_MAX_CONCURRENT || "10", 10);
+const MAX_CONCURRENT = parseInt(process.env.LLM_MAX_CONCURRENT || "25", 10);
 const concurrency = new AsyncSemaphore(MAX_CONCURRENT);
 
 // ─── Retry with exponential backoff ────────────────────────────────────────
@@ -104,7 +110,7 @@ const circuitBreakerOptions: CircuitBreaker.Options = {
   resetTimeout: parseInt(process.env.LLM_CIRCUIT_BREAKER_RESET_MS || "30000", 10),
   rollingCountTimeout: 10000,
   rollingCountBuckets: 10,
-  volumeThreshold: parseInt(process.env.LLM_CIRCUIT_BREAKER_VOLUME || "5", 10),
+  volumeThreshold: parseInt(process.env.LLM_CIRCUIT_BREAKER_VOLUME || "20", 10),
 };
 
 let circuitState: "closed" | "open" | "half_open" = "closed";
@@ -125,6 +131,7 @@ if (OPENAI_API_KEY) {
     baseURL: OPENAI_BASE_URL,
     timeout: parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10),
     maxRetries: parseInt(process.env.LLM_MAX_RETRIES || "5", 10),
+    httpAgent: OPENAI_BASE_URL.startsWith("https") ? llmHttpsAgent : llmHttpAgent,
   });
 }
 
@@ -314,7 +321,14 @@ server.addService(llmService.service, {
     // Acquire concurrency slot — limits simultaneous calls to upstream API
     let acquired = false;
     try {
-      await concurrency.acquire();
+      const slotAcquired = await concurrency.acquire(25000);
+      if (!slotAcquired) {
+        logger.warn({ agent_id, execution_id }, "Concurrency slot timeout — all slots busy");
+        return callback({
+          code: grpc.status.DEADLINE_EXCEEDED,
+          message: "Too many concurrent LLM requests, please retry later",
+        });
+      }
       acquired = true;
 
       // Map messages to OpenAI format, preserving tool_calls on assistant messages
