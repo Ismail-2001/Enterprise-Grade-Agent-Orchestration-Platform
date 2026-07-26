@@ -75,6 +75,11 @@ const { createSandbox, terminateSandbox } = proxyActivities<typeof activities>({
   retry: TRANSIENT_RETRY_POLICY,
 });
 
+const { reportOutcome } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "10s",
+  retry: { maximumAttempts: 2, initialInterval: "500ms" },
+});
+
 // ─── Signal & Query Handlers ───────────────────────────────────────────────
 
 export const cancelSignal = defineSignal("cancel");
@@ -649,6 +654,14 @@ export async function reactWorkflow(
       error: "Unexpected exit",
     };
   }
+
+  // Report terminal outcome to dead-letter queue (best-effort, non-critical)
+  await reportOutcome({
+    agentId: input.agentId,
+    executionId: input.executionId,
+    namespace: input.namespace,
+    result,
+  }).catch(() => {});
 
   return result;
 }

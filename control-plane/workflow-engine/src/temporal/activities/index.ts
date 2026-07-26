@@ -649,6 +649,10 @@ export async function terminateSandbox(
   }
 }
 
+// ─── Activity: reportOutcome (dead-letter queue) ──────────────────────────
+
+export { reportOutcome } from "./dead-letter-queue";
+
 // ─── Activity: recordObservability ─────────────────────────────────────────
 
 interface RecordObservabilityParams {
