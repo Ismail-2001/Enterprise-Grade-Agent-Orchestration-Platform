@@ -38,14 +38,35 @@ jobs:
           fi
 
   #############################################################################
-  # DEPLOY STAGING
+  # INFRA CHECK — staging server available?
+  #############################################################################
+  check-infra:
+    name: Check Staging Infrastructure
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    outputs:
+      has_staging_host: ${{ steps.infra.outputs.has_staging_host }}
+    steps:
+      - name: Check if STAGING_HOST is configured
+        id: infra
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+        run: |
+          if [ -n "$STAGING_HOST" ]; then
+            echo "has_staging_host=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_staging_host=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  #############################################################################
+  # DEPLOY STAGING (only when infra exists)
   #############################################################################
   deploy-staging:
     name: Deploy Staging
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    needs: [check-ci-status]
-    if: needs.check-ci-status.outputs.ci_passed == 'true'
+    needs: [check-ci-status, check-infra]
+    if: needs.check-ci-status.outputs.ci_passed == 'true' && needs.check-infra.outputs.has_staging_host == 'true'
     environment: staging
     outputs:
       smoke_passed: ${{ steps.smoke.outputs.passed }}
@@ -179,7 +200,29 @@ jobs:
           bash scripts/rollback.sh "$SLACK_WEBHOOK" "${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}"
 
   #############################################################################
-  # PROMOTE TO PRODUCTION (manual approval)
+  # DRY-RUN (no staging infra available)
+  #############################################################################
+  dry-run:
+    name: Dry Run (no staging server)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    needs: [check-ci-status, check-infra]
+    if: needs.check-ci-status.outputs.ci_passed == 'true' && needs.check-infra.outputs.has_staging_host == 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: docker compose build
+      - name: Summary
+        run: |
+          echo "## Deploy: Dry Run" >> $GITHUB_STEP_SUMMARY
+          echo "No staging server configured (\`STAGING_HOST\` secret not set)." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build status**: ✅ Images built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To enable full deployment, set the \`STAGING_HOST\` repository secret." >> $GITHUB_STEP_SUMMARY
+
+  #############################################################################
+  # PROMOTE TO PRODUCTION (manual approval, requires staging)
   #############################################################################
   deploy-production:
     name: Deploy Production
