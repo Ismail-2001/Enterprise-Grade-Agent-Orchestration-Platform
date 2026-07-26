@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import pino from "pino";
 import { getAgentRepository, type AgentRow } from "./repository";
+import { createAuditEntry } from "@e-gaop/shared";
 
 const logger = pino({
   level: process.env.NODE_ENV === "test" ? "silent" : (process.env.LOG_LEVEL || "info"),
@@ -100,6 +101,17 @@ export const agentHandlers = {
       });
 
       logger.info({ namespace, name, uid: agent.id }, "Agent created");
+
+      try {
+        createAuditEntry(
+          "agent.create",
+          "info",
+          { type: "service", id: "api-server" },
+          { name: "CreateAgent", result: "allowed" },
+          { type: "agent", id: `${namespace}/${name}`, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, toProtoAgent(rowToAgent(agent)));
     } catch (err) {
       logger.error({ err }, "CreateAgent failed");
@@ -194,6 +206,17 @@ export const agentHandlers = {
       }
 
       logger.warn({ namespace, name, uid: deleted.id }, "Agent soft-deleted");
+
+      try {
+        createAuditEntry(
+          "agent.create",
+          "warn",
+          { type: "service", id: "api-server" },
+          { name: "DeleteAgent", result: "allowed" },
+          { type: "agent", id: `${namespace}/${name}`, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {});
     } catch (err) {
       logger.error({ err }, "DeleteAgent failed");

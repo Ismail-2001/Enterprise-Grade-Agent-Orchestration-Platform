@@ -144,6 +144,17 @@ server.addService(runtimeService.service, {
     const { sandbox_id } = call.request;
     try {
       const status = await sandboxDriver.getSandboxStatus(sandbox_id);
+
+      try {
+        createAuditEntry(
+          "sandbox.exec",
+          "info",
+          { type: "service", id: "sandbox-runtime" },
+          { name: "GetSandboxStatus", result: "allowed" },
+          { type: "sandbox", id: sandbox_id },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {
         status: status.status,
         cpu_usage: status.cpu,

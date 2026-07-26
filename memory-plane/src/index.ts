@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, createAuditEntry } from "@e-gaop/shared";
 
 initTracing("memory-plane");
 loadSecretsIntoEnv();
@@ -128,6 +128,16 @@ server.addService(memoryService.service, {
 
       await redis.setex(redisKey, ttl, serialized);
 
+      try {
+        createAuditEntry(
+          "agent.tool_call",
+          "info",
+          { type: "agent", id: agent_id, namespace },
+          { name: "memory.Write", result: "allowed" },
+          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, { status: "success", version: `rev-${Date.now()}` });
     } catch (err: any) {
       logger.error({ err: err.message }, "Memory write error");
@@ -145,6 +155,17 @@ server.addService(memoryService.service, {
 
       const redisKey = `egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`;
       await redis.del(redisKey);
+
+      try {
+        createAuditEntry(
+          "agent.tool_call",
+          "info",
+          { type: "agent", id: agent_id, namespace },
+          { name: "memory.Delete", result: "allowed" },
+          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, { status: "success" });
     } catch (err: any) {
       callback(null, { status: "error" });

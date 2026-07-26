@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "crypto";
 import pino from "pino";
-import { hashPassword, comparePassword, signJWT, verifyJWT, type JWTClaims } from "@e-gaop/shared";
+import { hashPassword, comparePassword, signJWT, verifyJWT, createAuditEntry, type JWTClaims } from "@e-gaop/shared";
 import {
   getUserRepository,
   ensureAdminUser,
@@ -108,6 +108,17 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       namespaceAccess: ["default"],
     });
 
+    try {
+      createAuditEntry(
+        "auth.login",
+        "info",
+        { type: "user", id: user.id, authMethod: "jwt" },
+        { name: "register", result: "allowed" },
+        { type: "user", id: user.id },
+        { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     // Generate JWT
     const claims: Omit<JWTClaims, "iat" | "exp"> = {
       sub: user.id,
@@ -149,11 +160,31 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
     if (!user) {
       // Always return same error for invalid email/password to prevent enumeration
+      try {
+        createAuditEntry(
+          "auth.failed_login",
+          "warn",
+          { type: "user", id: email, authMethod: "jwt" },
+          { name: "login", result: "denied", reason: "user not found" },
+          { type: "user", id: email },
+          { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+        );
+      } catch { /* audit failure is non-fatal */ }
       reply.code(401).send({ error: { message: "Invalid email or password", code: "INVALID_CREDENTIALS" } });
       return;
     }
 
     if (!user.is_active) {
+      try {
+        createAuditEntry(
+          "auth.failed_login",
+          "warn",
+          { type: "user", id: user.id, authMethod: "jwt" },
+          { name: "login", result: "denied", reason: "account disabled" },
+          { type: "user", id: user.id },
+          { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+        );
+      } catch { /* audit failure is non-fatal */ }
       reply.code(403).send({ error: { message: "Account is deactivated", code: "ACCOUNT_DISABLED" } });
       return;
     }
@@ -175,12 +206,34 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     if (!valid) {
       const { locked } = await repo.incrementFailedLogin(email);
 
+      try {
+        createAuditEntry(
+          "auth.failed_login",
+          "warn",
+          { type: "user", id: user.id, authMethod: "jwt" },
+          { name: "login", result: "denied", reason: "invalid password" },
+          { type: "user", id: user.id },
+          { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       reply.code(401).send({ error: { message: "Invalid email or password", code: "INVALID_CREDENTIALS" } });
       return;
     }
 
     // Reset failed attempts on success
     await repo.resetFailedLogin(email);
+
+    try {
+      createAuditEntry(
+        "auth.login",
+        "info",
+        { type: "user", id: user.id, authMethod: "jwt" },
+        { name: "login", result: "allowed" },
+        { type: "user", id: user.id },
+        { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+      );
+    } catch { /* audit failure is non-fatal */ }
 
     // Generate JWT
     const claims: Omit<JWTClaims, "iat" | "exp"> = {
@@ -253,6 +306,17 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       [newHash, claims.email]
     );
 
+    try {
+      createAuditEntry(
+        "auth.login",
+        "info",
+        { type: "user", id: claims.sub, authMethod: "jwt" },
+        { name: "change-password", result: "allowed" },
+        { type: "user", id: claims.sub },
+        { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     return {
       data: { message: "Password changed successfully" },
       meta: { traceId: crypto.randomUUID(), timestamp: new Date().toISOString() },
@@ -281,7 +345,21 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /api/auth/logout (protected)
-  fastify.post("/api/auth/logout", { preHandler: [authenticate] }, async () => {
+  fastify.post("/api/auth/logout", { preHandler: [authenticate] }, async (request) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claims = (request as any).user as JWTClaims;
+
+    try {
+      createAuditEntry(
+        "auth.logout",
+        "info",
+        { type: "user", id: claims.sub, authMethod: "jwt" },
+        { name: "logout", result: "allowed" },
+        { type: "user", id: claims.sub },
+        { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     // In a real implementation, invalidate the token/session
     return {
       data: { message: "Logged out successfully" },

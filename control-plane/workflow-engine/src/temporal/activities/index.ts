@@ -4,7 +4,7 @@ import * as protoLoader from "@grpc/proto-loader";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { QuotaEnforcer, getClientCredentials, getStandardInterceptors, QuotaExceededError } from "@e-gaop/shared";
+import { QuotaEnforcer, getClientCredentials, getStandardInterceptors, QuotaExceededError, createAuditEntry } from "@e-gaop/shared";
 import type { LLMResponse, ToolResult } from "../types";
 import { classifyLLMResponse } from "../classification";
 
@@ -210,6 +210,16 @@ export async function callLLM(params: CallLLMParams): Promise<LLMResponse> {
     const content = response.content ?? "";
     const toolCalls = response.tool_calls;
 
+    try {
+      createAuditEntry(
+        "agent.execution_start",
+        "info",
+        { type: "agent", id: params.agentId, namespace: params.namespace },
+        { name: "callLLM", result: "allowed" },
+        { type: "llm", id: params.executionId, namespace: params.namespace },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     // Structured tool_calls from the LLM take priority over [tool:] text parsing
     const firstToolCall = toolCalls?.[0];
     if (firstToolCall) {
@@ -306,6 +316,16 @@ export async function executeTool(params: ExecuteToolParams): Promise<ToolResult
       error_message?: string;
       latency_ms: number;
     };
+
+    try {
+      createAuditEntry(
+        "agent.tool_call",
+        "info",
+        { type: "agent", id: params.agentId, namespace: params.namespace },
+        { name: params.toolName, result: response.status === "succeeded" ? "allowed" : "error" },
+        { type: "tool", id: params.toolName, namespace: params.namespace },
+      );
+    } catch { /* audit failure is non-fatal */ }
 
     return {
       toolName: params.toolName,
@@ -483,6 +503,16 @@ export async function evaluatePolicy(
       ? ""
       : (resultObj?.["reason"] as string) ?? "Policy denied";
 
+    try {
+      createAuditEntry(
+        allow ? "policy.decision" : "policy.deny",
+        allow ? "info" : "warn",
+        { type: "agent", id: params.agentId, namespace: params.namespace },
+        { name: params.action, result: allow ? "allowed" : "denied", reason: reason || undefined },
+        { type: "policy", id: params.action, namespace: params.namespace },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     return { allow, reason };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -514,6 +544,17 @@ export async function admitAgent(params: AdmitAgentParams): Promise<boolean> {
     const agent = response as Record<string, unknown>;
     const status = agent["status"] as Record<string, unknown> | undefined;
     const phase = status?.["phase"] as string | undefined;
+
+    try {
+      createAuditEntry(
+        "agent.create",
+        "info",
+        { type: "agent", id: params.agentId, namespace: params.namespace },
+        { name: "admitAgent", result: "allowed" },
+        { type: "agent", id: params.agentId, namespace: params.namespace },
+      );
+    } catch { /* audit failure is non-fatal */ }
+
     return phase === "Pending" || phase === "Running";
   } catch (err: unknown) {
     const grpcErr = err as { details?: string; message?: string };

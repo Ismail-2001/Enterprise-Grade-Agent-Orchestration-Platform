@@ -1,4 +1,4 @@
-import { type Namespace, type NamespaceTierValue, DEFAULT_QUOTAS, validateSlug } from "@e-gaop/shared";
+import { type Namespace, type NamespaceTierValue, DEFAULT_QUOTAS, validateSlug, createAuditEntry } from "@e-gaop/shared";
 import pino from "pino";
 import { NamespaceRepository } from "./repository.js";
 
@@ -80,6 +80,17 @@ export const namespaceHandlers = {
         },
       });
       logger.info({ slug, tier, ownerId: ns.ownerId }, "Namespace created");
+
+      try {
+        createAuditEntry(
+          "namespace.create",
+          "info",
+          { type: "service", id: "api-server" },
+          { name: "CreateNamespace", result: "allowed" },
+          { type: "namespace", id: slug },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, toProtoNamespace(ns));
     } catch (err: any) {
       if (err.code === "23505") {
@@ -153,6 +164,17 @@ export const namespaceHandlers = {
         return;
       }
       logger.warn({ slug, reason: call.request.reason }, "Namespace suspended");
+
+      try {
+        createAuditEntry(
+          "namespace.suspend",
+          "warn",
+          { type: "service", id: "api-server" },
+          { name: "SuspendNamespace", result: "allowed", reason: call.request.reason as string },
+          { type: "namespace", id: slug },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, toProtoNamespace(ns));
     } catch (err: any) {
       callback(new Error(`Failed to suspend namespace: ${err.message}`));
@@ -168,6 +190,17 @@ export const namespaceHandlers = {
         return;
       }
       logger.warn({ slug }, "Namespace soft-deleted");
+
+      try {
+        createAuditEntry(
+          "namespace.delete",
+          "warn",
+          { type: "service", id: "api-server" },
+          { name: "DeleteNamespace", result: "allowed" },
+          { type: "namespace", id: slug },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {});
     } catch (err: any) {
       callback(new Error(`Failed to delete namespace: ${err.message}`));

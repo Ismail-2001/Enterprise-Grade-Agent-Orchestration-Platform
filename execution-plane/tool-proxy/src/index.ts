@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, PIIViolationError } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, PIIViolationError, createAuditEntry } from "@e-gaop/shared";
 
 initTracing("tool-proxy");
 loadSecretsIntoEnv();
@@ -216,6 +216,16 @@ server.addService(toolService.service, {
       const latency = Date.now() - startTime;
       logger.info({ tool_name, latency, status: response.status }, "Tool call completed");
 
+      try {
+        createAuditEntry(
+          "agent.tool_call",
+          "info",
+          { type: "agent", id: agent_id },
+          { name: tool_name, result: response.ok ? "allowed" : "error" },
+          { type: "tool", id: tool_name },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {
         result: { value: "SUCCESS", message: body.slice(0, 10000) },
         status: "succeeded",
@@ -225,6 +235,17 @@ server.addService(toolService.service, {
     } catch (err: any) {
       const latency = Date.now() - startTime;
       logger.error({ tool_name, err: err.message }, "Tool call failed");
+
+      try {
+        createAuditEntry(
+          "agent.tool_call",
+          "error",
+          { type: "agent", id: agent_id },
+          { name: tool_name, result: "error", reason: err.message },
+          { type: "tool", id: tool_name },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {
         status: "failed",
         error_message: `Tool execution failed: ${tool_name}`,

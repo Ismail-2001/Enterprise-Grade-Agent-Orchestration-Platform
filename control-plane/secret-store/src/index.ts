@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, createAuditEntry } from "@e-gaop/shared";
 
 initTracing("secret-store");
 loadSecretsIntoEnv();
@@ -81,6 +81,17 @@ server.addService(secretService.service, {
         type: type ?? "api_key",
       });
       logger.info({ key }, "Secret persisted to PostgreSQL");
+
+      try {
+        createAuditEntry(
+          "secret.create",
+          "info",
+          { type: "service", id: "secret-store" },
+          { name: "CreateSecret", result: "allowed" },
+          { type: "secret", id: key, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {
         api_version: "egaop.io/v1",
         kind: "Secret",
@@ -104,10 +115,30 @@ server.addService(secretService.service, {
     try {
       const row = await repo.get(namespace, name);
       if (!row) {
+        try {
+          createAuditEntry(
+            "secret.access",
+            "warn",
+            { type: "service", id: "secret-store" },
+            { name: "GetSecret", result: "denied", reason: "not found" },
+            { type: "secret", id: key, namespace },
+          );
+        } catch { /* audit failure is non-fatal */ }
         return callback({ code: grpc.status.NOT_FOUND, message: `Secret ${key} not found` });
       }
       const payload: EncryptedPayload = JSON.parse(row.encryptedData);
       const decryptedData = JSON.parse(await decrypt(payload, MASTER_KEY));
+
+      try {
+        createAuditEntry(
+          "secret.access",
+          "info",
+          { type: "service", id: "secret-store" },
+          { name: "GetSecret", result: "allowed" },
+          { type: "secret", id: key, namespace },
+        );
+      } catch { /* audit failure is non-fatal */ }
+
       callback(null, {
         metadata: { name, namespace },
         spec: { type: row.type, data: decryptedData }

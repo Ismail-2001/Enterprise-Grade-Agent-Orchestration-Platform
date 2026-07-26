@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import * as grpc from "@grpc/grpc-js";
 import { PolicyPlaneService, type PolicyInput, type PolicyDecision } from "./service";
+import { createAuditEntry } from "@e-gaop/shared";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -196,6 +197,16 @@ function createPolicyInterceptor(options: PolicyInterceptorOptions) {
       .evaluatePolicy(options.policyPath, input)
       .then((decision: PolicyDecision) => {
         if (!decision.allow) {
+          try {
+            createAuditEntry(
+              "policy.deny",
+              "warn",
+              { type: "agent", id: input.agentId, namespace: input.namespace },
+              { name: "policy.evaluate", result: "denied", reason: decision.reason },
+              { type: "policy", id: input.action, namespace: input.namespace },
+            );
+          } catch { /* audit failure is non-fatal */ }
+
           const error = createServiceError(
             `Policy denied: ${decision.reason}`,
             grpc.status.PERMISSION_DENIED,
