@@ -12,6 +12,44 @@ tls:
   certManager:
     enabled: true
 
+# ─── Service TLS (enable cert-manager for all services) ─────────────────────
+api-server:
+  tls:
+    certManager:
+      enabled: true
+secret-store:
+  tls:
+    certManager:
+      enabled: true
+workflow-engine:
+  tls:
+    certManager:
+      enabled: true
+llm-router:
+  tls:
+    certManager:
+      enabled: true
+tool-proxy:
+  tls:
+    certManager:
+      enabled: true
+sandbox-runtime:
+  tls:
+    certManager:
+      enabled: true
+memory-plane:
+  tls:
+    certManager:
+      enabled: true
+observability-plane:
+  tls:
+    certManager:
+      enabled: true
+admin-console:
+  tls:
+    certManager:
+      enabled: true
+
 # ─── External Secrets Operator (required in production) ─────────────────────
 externalSecrets:
   enabled: true

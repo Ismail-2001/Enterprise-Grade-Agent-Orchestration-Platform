@@ -1,0 +1,46 @@
+{{- if .Values.tls.certManager.enabled }}
+{{- $fullname := include "e-gaop.fullname" . -}}
+{{- $namespace := .Release.Namespace -}}
+{{- $issuerName := printf "%s-internal-ca" $fullname -}}
+{{- $services := list
+    (dict "name" "api-server"       "port" 50051)
+    (dict "name" "secret-store"     "port" 50057)
+    (dict "name" "workflow-engine"  "port" 50058)
+    (dict "name" "llm-router"       "port" 50053)
+    (dict "name" "tool-proxy"       "port" 50052)
+    (dict "name" "sandbox-runtime"  "port" 50054)
+    (dict "name" "memory-plane"     "port" 50055)
+    (dict "name" "observability-plane" "port" 50056)
+    (dict "name" "admin-console"    "port" 3000)
+ -}}
+{{- range $services }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}-{{ .name }}-tls
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "e-gaop.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
+spec:
+  secretName: {{ .name }}-tls
+  duration: 24h
+  renewBefore: 4h
+  subject:
+    organizations:
+      - egaop.io
+  dnsNames:
+    - {{ .name }}.{{ $namespace }}.svc.cluster.local
+    - {{ .name }}
+  usages:
+    - server auth
+    - client auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ $issuerName }}
+    kind: ClusterIssuer
+{{- end }}
+{{- end }}

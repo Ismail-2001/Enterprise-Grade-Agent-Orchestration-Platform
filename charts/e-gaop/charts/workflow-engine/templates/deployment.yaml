@@ -63,6 +63,19 @@ spec:
             runAsUser: 1001
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+          {{- if .Values.tls.certManager.enabled }}
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/egaop/certs
+              readOnly: true
+          {{- end }}
       securityContext:
         fsGroup: 1001
+      {{- if .Values.tls.certManager.enabled }}
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: workflow-engine-tls
+            optional: true
+      {{- end }}
 {{- end }}

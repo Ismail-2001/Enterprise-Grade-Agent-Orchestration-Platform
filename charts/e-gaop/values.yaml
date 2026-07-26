@@ -162,6 +162,7 @@ defaults:
     fsGroup: 1001
 
 # ─── Service Overrides ──────────────────────────────────────────────────────
+# tls.certManager.enabled is inherited by each subchart from global defaults.
 api-server:
   enabled: true
   image: egaop/api-server
@@ -177,6 +178,9 @@ api-server:
     limits:
       cpu: "1"
       memory: 1Gi
+  tls:
+    certManager:
+      enabled: false
 
 secret-store:
   enabled: true
@@ -185,6 +189,9 @@ secret-store:
   replicas: 1
   grpcPort: 50057
   healthPort: 15057
+  tls:
+    certManager:
+      enabled: false
 
 workflow-engine:
   enabled: true
@@ -194,6 +201,9 @@ workflow-engine:
   healthPort: 15058
   temporalNamespace: default
   taskQueue: egaop-agent-queue
+  tls:
+    certManager:
+      enabled: false
 
 llm-router:
   enabled: true
@@ -203,6 +213,9 @@ llm-router:
   grpcPort: 50053
   healthPort: 15053
   rateLimitRpm: 30
+  tls:
+    certManager:
+      enabled: false
 
 tool-proxy:
   enabled: true
@@ -212,6 +225,9 @@ tool-proxy:
   grpcPort: 50052
   healthPort: 15052
   rateLimitRpm: 60
+  tls:
+    certManager:
+      enabled: false
 
 sandbox-runtime:
   enabled: true
@@ -220,6 +236,9 @@ sandbox-runtime:
   replicas: 1
   grpcPort: 50054
   healthPort: 15054
+  tls:
+    certManager:
+      enabled: false
 
 memory-plane:
   enabled: true
@@ -228,6 +247,9 @@ memory-plane:
   replicas: 1
   grpcPort: 50055
   healthPort: 15055
+  tls:
+    certManager:
+      enabled: false
 
 observability-plane:
   enabled: true
@@ -236,6 +258,9 @@ observability-plane:
   replicas: 1
   grpcPort: 50056
   healthPort: 15056
+  tls:
+    certManager:
+      enabled: false
 
 admin-console:
   enabled: true
@@ -243,3 +268,6 @@ admin-console:
   tag: latest
   replicas: 1
   port: 3000
+  tls:
+    certManager:
+      enabled: false

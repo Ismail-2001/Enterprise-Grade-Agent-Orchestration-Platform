@@ -13,3 +13,6 @@ resources:
     memory: 1Gi
 serviceMonitor:
   enabled: false
+tls:
+  certManager:
+    enabled: false
