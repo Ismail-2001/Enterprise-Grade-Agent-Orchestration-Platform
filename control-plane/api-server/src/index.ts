@@ -164,6 +164,56 @@ fastify.register(swaggerUi, {
   routePrefix: "/api/docs",
 });
 
+// ETag support for conditional GET (304 Not Modified)
+const etagStore = new Map<string, { hash: string; body: string }>();
+
+fastify.addHook("onSend", async (request, reply, payload) => {
+  if (request.method === "GET" && typeof payload === "string" && reply.statusCode === 200) {
+    const hash = crypto.createHash("sha256").update(payload).digest("base64url").slice(0, 27);
+    const cacheKey = request.url;
+    const previous = etagStore.get(cacheKey);
+
+    if (previous && previous.hash === hash) {
+      etagStore.delete(cacheKey);
+    } else {
+      etagStore.set(cacheKey, { hash, body: payload });
+      if (etagStore.size > 500) {
+        const firstKey = etagStore.keys().next().value;
+        if (firstKey) etagStore.delete(firstKey);
+      }
+    }
+
+    reply.header("ETag", `"${hash}"`);
+
+    const ifNoneMatch = request.headers["if-none-match"];
+    if (ifNoneMatch === `"${hash}"`) {
+      reply.code(304);
+      return "";
+    }
+  }
+  return payload;
+});
+
+// Caching headers for GET responses (enables CDN/proxy caching)
+const CACHE_TTL: Record<string, string> = {
+  "/api/agents": "public, max-age=30, stale-while-revalidate=120",
+  "/api/namespaces": "public, max-age=60, stale-while-revalidate=300",
+  "/api/executions": "public, max-age=30, stale-while-revalidate=120",
+  "/api/traces": "no-cache, max-age=10",
+  "/api/metrics": "no-cache, max-age=15",
+  "/api/events": "no-cache, max-age=10",
+  "/api/auth/me": "private, no-cache, max-age=10",
+};
+
+fastify.addHook("onRequest", async (request, reply) => {
+  if (request.method === "GET") {
+    const cacheKey = Object.keys(CACHE_TTL).find((k) => request.url.startsWith(k));
+    if (cacheKey) {
+      reply.header("Cache-Control", CACHE_TTL[cacheKey]);
+    }
+  }
+});
+
 // Content-type enforcement for mutation requests
 fastify.addHook("preHandler", async (request, reply) => {
   if (["POST", "PUT", "PATCH"].includes(request.method)) {
