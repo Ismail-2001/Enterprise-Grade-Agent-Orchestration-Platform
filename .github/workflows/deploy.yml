@@ -210,8 +210,7 @@ jobs:
     if: needs.check-ci-status.outputs.ci_passed == 'true' && needs.check-infra.outputs.has_staging_host == 'false'
     steps:
       - uses: actions/checkout@v4
-      - name: Build images
-        run: docker compose build
+      # Images are already built and validated by CI — skip redundant build
       - name: Summary
         run: |
           echo "## Deploy: Dry Run" >> $GITHUB_STEP_SUMMARY
