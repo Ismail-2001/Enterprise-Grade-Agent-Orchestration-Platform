@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-GAOP Benchmarks</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 40px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 24px;
+    padding: 48px;
+    max-width: 900px;
+    width: 100%;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #e6edf3;
+  }
+  .header p {
+    color: #8b949e;
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid #30363d;
+    border-radius: 16px;
+    padding: 24px 16px;
+    text-align: center;
+    transition: transform 0.2s;
+  }
+  .stat-card:hover { transform: translateY(-2px); border-color: #58a6ff; }
+  .stat-value {
+    font-size: 36px;
+    font-weight: 800;
+    color: #58a6ff;
+    line-height: 1.1;
+  }
+  .stat-unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: #58a6ff;
+  }
+  .stat-label {
+    font-size: 13px;
+    color: #8b949e;
+    margin-top: 8px;
+  }
+  .stat-sub {
+    font-size: 11px;
+    color: #484f58;
+    margin-top: 4px;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #21262d;
+    margin: 24px 0;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .row:last-child { border-bottom: none; }
+  .row-label { color: #8b949e; font-size: 14px; }
+  .row-value { color: #e6edf3; font-weight: 600; font-size: 14px; }
+  .row-value.green { color: #3fb950; }
+  .row-value.red { color: #f85149; }
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    color: #484f58;
+    font-size: 13px;
+  }
+  .tags {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    background: rgba(88,166,255,0.1);
+    color: #58a6ff;
+    border: 1px solid rgba(88,166,255,0.2);
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>E-GAOP — Performance Benchmarks</h1>
+    <p>Verified against running code · CI-compatible tests · No Docker Compose needed</p>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">14,532</div>
+      <div class="stat-unit">req/s</div>
+      <div class="stat-label">API Throughput<br><span class="stat-sub">/api/agents · 1000 req · 50 concurrency</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">189,743</div>
+      <div class="stat-unit">req/s</div>
+      <div class="stat-label">Health Check<br><span class="stat-sub">/health · 2000 req · 100 concurrency</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">25</div>
+      <div class="stat-unit">agents</div>
+      <div class="stat-label">Concurrent Ceiling<br><span class="stat-sub">100% success · semaphore 25s timeout</span></div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div style="margin-bottom: 16px;">
+    <div style="color: #e6edf3; font-weight: 600; font-size: 16px; margin-bottom: 12px;">Production Readiness</div>
+    <div class="row">
+      <span class="row-label">Overall Score</span>
+      <span class="row-value" style="color: #d29922;">86.0%</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Functional Completeness</span>
+      <span class="row-value green">93%</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Reliability</span>
+      <span class="row-value green">88%</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Security</span>
+      <span class="row-value" style="color: #d29922;">72%</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Operability</span>
+      <span class="row-value green">84%</span>
+    </div>
+    <div class="row">
+      <span class="row-label">Agent Quality (Evals)</span>
+      <span class="row-value green">84.2%</span>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="row">
+    <span class="row-label">CI Pipeline</span>
+    <span class="row-value green">17/17 jobs green</span>
+  </div>
+  <div class="row">
+    <span class="row-label">Security Scan</span>
+    <span class="row-value green">14/14 jobs green</span>
+  </div>
+  <div class="row">
+    <span class="row-label">Unit Tests</span>
+    <span class="row-value green">297 passing</span>
+  </div>
+  <div class="row">
+    <span class="row-label">Vulnerabilities</span>
+    <span class="row-value green">0 CVEs (19 fixed)</span>
+  </div>
+  <div class="row">
+    <span class="row-label">mTLS</span>
+    <span class="row-value green">Enabled (requestCert: true)</span>
+  </div>
+  <div class="row">
+    <span class="row-label">Eval Pass Rate</span>
+    <span class="row-value" style="color: #d29922;">84.2% (16/19 cases)</span>
+  </div>
+
+  <div class="tags">
+    <span class="tag">TypeScript strict</span>
+    <span class="tag">Node 24</span>
+    <span class="tag">Temporal</span>
+    <span class="tag">gRPC</span>
+    <span class="tag">OPA/Rego</span>
+    <span class="tag">Fastify</span>
+    <span class="tag">PostgreSQL</span>
+    <span class="tag">OpenTelemetry</span>
+    <span class="tag">Prometheus</span>
+    <span class="tag">Grafana</span>
+  </div>
+
+  <div class="footer">github.com/Ismail-2001/The-Kubernetes-of-AI-Agents</div>
+</div>
+</body>
+</html>

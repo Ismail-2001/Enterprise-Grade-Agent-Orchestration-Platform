@@ -1,0 +1,52 @@
+name: Provision Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'Staging server IP/hostname'
+        required: true
+        type: string
+      user:
+        description: 'SSH user (must have sudo / root access)'
+        required: true
+        default: 'root'
+        type: string
+
+env:
+  SSH_USER: ${{ inputs.user }}
+  SSH_HOST: ${{ inputs.host }}
+
+jobs:
+  provision:
+    name: Provision staging server
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
+
+      - name: Add host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run provisioning script
+        run: |
+          scp scripts/provision-staging.sh "${SSH_USER}@${SSH_HOST}:/tmp/provision-staging.sh"
+          ssh "${SSH_USER}@${SSH_HOST}" "sudo bash /tmp/provision-staging.sh"
+
+      - name: Verify staging readiness
+        run: |
+          echo "=== Staging server provisioned ==="
+          echo "Host: $SSH_HOST"
+          echo "User: egaop"
+          echo ""
+          echo "Next: add the deploy SSH public key and set GitHub secrets:"
+          echo "  STAGING_HOST     = $SSH_HOST"
+          echo "  STAGING_USER     = egaop"
+          echo "  STAGING_SSH_KEY  = <private key>"

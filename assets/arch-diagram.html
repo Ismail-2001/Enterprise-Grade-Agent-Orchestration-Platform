@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-GAOP Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 40px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 24px;
+    padding: 48px;
+    max-width: 1100px;
+    width: 100%;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #e6edf3;
+    letter-spacing: -0.5px;
+  }
+  .header p {
+    color: #8b949e;
+    font-size: 16px;
+    margin-top: 8px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .plane {
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .plane-title {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+  }
+  .service {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  .service:last-child { margin-bottom: 0; }
+  .service-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e6edf3;
+  }
+  .service-desc {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 2px;
+  }
+  .color-cp { background: #1e3a5f; border-color: #2d5a8f; }
+  .color-cp .plane-title { color: #58a6ff; border-color: #2d5a8f; }
+  .color-ep { background: #2d4a3e; border-color: #3d6b56; }
+  .color-ep .plane-title { color: #3fb950; border-color: #3d6b56; }
+  .color-dp { background: #4a3a1e; border-color: #6b552e; }
+  .color-dp .plane-title { color: #d29922; border-color: #6b552e; }
+  .color-pp { background: #4a1e2d; border-color: #6b2e3d; }
+  .color-pp .plane-title { color: #f85149; border-color: #6b2e3d; }
+  .color-op { background: #3a1e4a; border-color: #5a2d6b; }
+  .color-op .plane-title { color: #bc8cff; border-color: #5a2d6b; }
+  .connectors {
+    margin-top: 24px;
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 12px;
+    border: 1px dashed #30363d;
+    text-align: center;
+  }
+  .connectors span {
+    color: #8b949e;
+    font-size: 13px;
+    margin: 0 12px;
+  }
+  .connectors .arrow { color: #58a6ff; }
+  .connectors .dashed { color: #f85149; }
+  .badge-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(255,255,255,0.06);
+    color: #8b949e;
+    border: 1px solid #30363d;
+  }
+  .badge.green { background: rgba(63,185,80,0.15); color: #3fb950; border-color: #3fb950; }
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    color: #484f58;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1>E-GAOP — The Kubernetes of AI Agents</h1>
+    <p>5 planes · 10 microservices · 17 containers · Production-grade agent orchestration</p>
+    <div class="badge-row">
+      <span class="badge green">CI 17/17 ✅</span>
+      <span class="badge green">Security 14/14 ✅</span>
+      <span class="badge green">86% Readiness</span>
+      <span class="badge green">25 concurrent agents</span>
+      <span class="badge">297 tests</span>
+      <span class="badge">0 CVEs</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Control Plane -->
+    <div class="plane color-cp">
+      <div class="plane-title">🧠 Control Plane</div>
+      <div class="service"><div class="service-name">API Server</div><div class="service-desc">REST + gRPC · CORS allowlist</div></div>
+      <div class="service"><div class="service-name">Workflow Engine</div><div class="service-desc">Temporal · durable execution</div></div>
+      <div class="service"><div class="service-name">Secret Store</div><div class="service-desc">AES-256-GCM · encrypted at rest</div></div>
+    </div>
+
+    <!-- Execution Plane -->
+    <div class="plane color-ep">
+      <div class="plane-title">⚙️ Execution Plane</div>
+      <div class="service"><div class="service-name">LLM Router</div><div class="service-desc">3-model fallback · circuit breaker</div></div>
+      <div class="service"><div class="service-name">Tool Proxy</div><div class="service-desc">PII blocks · rate-limited</div></div>
+      <div class="service"><div class="service-name">Sandbox Runtime</div><div class="service-desc">Docker isolation · ephemeral</div></div>
+    </div>
+
+    <!-- Data / Memory Plane -->
+    <div class="plane color-dp">
+      <div class="plane-title">💾 Data / Memory Plane</div>
+      <div class="service"><div class="service-name">PostgreSQL</div><div class="service-desc">Entity store · migrations</div></div>
+      <div class="service"><div class="service-name">PgBouncer</div><div class="service-desc">Transaction pool · 25 conn</div></div>
+      <div class="service"><div class="service-name">Redis</div><div class="service-desc">Session cache · rate limits</div></div>
+    </div>
+
+    <!-- Policy Plane (spans half) -->
+    <div class="plane color-pp">
+      <div class="plane-title">🛡️ Policy Plane</div>
+      <div class="service"><div class="service-name">OPA / Rego</div><div class="service-desc">Policy-as-code · multi-tenant isolation</div></div>
+    </div>
+
+    <!-- Observability Plane (spans half) -->
+    <div class="plane color-op">
+      <div class="plane-title">📊 Observability Plane</div>
+      <div class="service"><div class="service-name">OTel Collector</div><div class="service-desc">Distributed traces</div></div>
+      <div class="service"><div class="service-name">Prometheus</div><div class="service-desc">RED metrics</div></div>
+      <div class="service"><div class="service-name">Grafana</div><div class="service-desc">5 alert rules · Slack</div></div>
+    </div>
+  </div>
+
+  <div class="connectors">
+    <span>Control → Execution</span>
+    <span class="arrow">→</span>
+    <span>Execution → Data</span>
+    <span class="arrow">→</span>
+    <span class="dashed">─ ─ policy check ─ ─</span>
+    <span class="arrow">🔄</span>
+    <span class="dashed">─ ─ traces / metrics ─ ─</span>
+  </div>
+
+  <div class="footer">github.com/Ismail-2001/The-Kubernetes-of-AI-Agents</div>
+</div>
+</body>
+</html>

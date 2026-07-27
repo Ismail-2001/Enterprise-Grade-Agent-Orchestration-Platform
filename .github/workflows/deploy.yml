@@ -129,6 +129,8 @@ jobs:
         run: docker compose up -d --wait --wait-timeout 120 --remove-orphans
 
       - name: Health check poll
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
         run: |
           echo "Polling API health endpoint..."
           for i in $(seq 1 12); do
@@ -148,6 +150,8 @@ jobs:
 
       - name: Run smoke tests
         id: smoke
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
         run: |
           base="${STAGING_HOST:-localhost}"
           if bash scripts/smoke-test.sh "$base"; then
