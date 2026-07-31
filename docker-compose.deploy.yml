@@ -1,0 +1,56 @@
+# =============================================================================
+# Deploy Override — replaces build contexts with pre-built ghcr.io images
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml \
+#                  -f docker-compose.deploy.yml up -d
+#
+# Why this file exists:
+#   docker-compose.yml uses `build:` for custom services (local dev).
+#   CI builds and pushes images to ghcr.io. This override nulls out the
+#   `build:` key and sets `image:` so docker compose pulls instead of builds.
+#
+# The `migrate` image is built and pushed by the deploy workflow itself
+# since it is not in the CI build matrix.
+# =============================================================================
+
+services:
+  migrate:
+    image: ${REGISTRY:?}/${IMAGE_NAMESPACE:?}/migrate:${IMAGE_TAG:?}
+    build: ~
+
+  api-server:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/api-server:${IMAGE_TAG}
+    build: ~
+
+  secret-store:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/secret-store:${IMAGE_TAG}
+    build: ~
+
+  workflow-engine:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/workflow-engine:${IMAGE_TAG}
+    build: ~
+
+  llm-router:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/llm-router:${IMAGE_TAG}
+    build: ~
+
+  tool-proxy:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/tool-proxy:${IMAGE_TAG}
+    build: ~
+
+  sandbox-runtime:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/sandbox-runtime:${IMAGE_TAG}
+    build: ~
+
+  memory-plane:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/memory-plane:${IMAGE_TAG}
+    build: ~
+
+  observability-plane:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/observability-plane:${IMAGE_TAG}
+    build: ~
+
+  admin-console:
+    image: ${REGISTRY}/${IMAGE_NAMESPACE}/admin-console:${IMAGE_TAG}
+    build: ~

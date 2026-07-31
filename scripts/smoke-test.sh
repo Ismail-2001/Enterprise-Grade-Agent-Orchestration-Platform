@@ -84,7 +84,6 @@ fi
 echo ""
 echo "── OTel Trace Verification ──"
 
-# Query Tempo for any traces from the last 5 minutes
 TRACE_QUERY=$(curl -s --max-time 10 \
   "http://${BASE_URL}:3200/api/search?query={service.name=%22egaop-api-server%22}&limit=1" \
   2>/dev/null || echo '{"traces":[]}')

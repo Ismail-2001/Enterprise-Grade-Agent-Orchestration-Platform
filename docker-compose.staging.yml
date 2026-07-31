@@ -121,6 +121,25 @@ services:
     deploy:
       replicas: 0
 
+  pgbouncer:
+    profiles:
+      - disabled
+    deploy:
+      replicas: 0
+
+  temporal:
+    profiles:
+      - disabled
+    deploy:
+      replicas: 0
+
+  migrate:
+    environment:
+      POSTGRES_URL: postgresql://egaop:staging-pg-pw@staging-postgres:5432/egaop
+    depends_on:
+      staging-postgres:
+        condition: service_healthy
+
   api-server:
     environment:
       REDIS_URL: redis://:staging-redis-pw@staging-redis:6379

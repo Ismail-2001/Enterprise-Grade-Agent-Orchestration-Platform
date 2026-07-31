@@ -14,6 +14,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+  IMAGE_NAMESPACE: ${{ github.repository }}
 
 jobs:
   #############################################################################
@@ -81,61 +82,82 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
 
-      - name: Configure Docker context
-        if: env.HAS_STAGING_HOST != ''
+      - name: Add staging host to known_hosts
         run: |
-          docker context create staging \
-            --docker "host=ssh://${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}"
-          docker context use staging
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Write .env (non-secrets only)
+      - name: Build and push migrate image
         run: |
-          cat > .env <<EOF
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+          docker build \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/migrate:${{ env.IMAGE_TAG }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/migrate:latest \
+            -f infrastructure/migrate/Dockerfile .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/migrate:${{ env.IMAGE_TAG }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/migrate:latest
+
+      - name: Sync source to staging
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='dist' \
+            --exclude='*.log' \
+            --exclude='.env' \
+            ./ ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}:~/egaop/
+
+      - name: Fix permissions on staging
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "chmod +x ~/egaop/scripts/*.sh 2>/dev/null || true"
+
+      - name: Write .env on staging
+        run: |
+          cat <<'ENVEOF' | ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} "cat > ~/egaop/.env"
           IMAGE_TAG=${{ env.IMAGE_TAG }}
           REGISTRY=${{ env.REGISTRY }}
+          IMAGE_NAMESPACE=${{ env.IMAGE_NAMESPACE }}
           LOG_LEVEL=debug
           NODE_ENV=staging
           POSTGRES_USER=egaop
           POSTGRES_DB=egaop
-          EOF
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EGAOP_MASTER_ENCRYPTION_KEY=${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
+          INTERNAL_SERVICE_TOKEN=${{ secrets.INTERNAL_SERVICE_TOKEN }}
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          ENVEOF
 
-      - name: Login to registry
+      - name: Login to registry on staging
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin"
 
-      - name: Run database migrations
-        env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          EGAOP_MASTER_ENCRYPTION_KEY: ${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-        run: docker compose run --rm migrate up
+      - name: Run database migrations on staging
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.staging.yml -f docker-compose.deploy.yml run --rm migrate up"
 
-      - name: Pull images
-        run: docker compose pull --quiet
+      - name: Pull images on staging
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.staging.yml -f docker-compose.deploy.yml pull --quiet"
 
-      - name: Deploy
-        env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          EGAOP_MASTER_ENCRYPTION_KEY: ${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-        run: docker compose up -d --wait --wait-timeout 120 --remove-orphans
+      - name: Deploy on staging
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.staging.yml -f docker-compose.deploy.yml up -d --wait --wait-timeout 120 --remove-orphans"
 
       - name: Health check poll
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
         run: |
           echo "Polling API health endpoint..."
           for i in $(seq 1 12); do
             status=$(curl -s -o /dev/null -w "%{http_code}" \
-              "http://${STAGING_HOST:-localhost}:15051/healthz" 2>/dev/null || echo "000")
+              "http://${{ secrets.STAGING_HOST }}:15051/healthz" 2>/dev/null || echo "000")
             if [ "$status" = "200" ]; then
               echo "API server is healthy (attempt $i)"
               break
@@ -150,11 +172,8 @@ jobs:
 
       - name: Run smoke tests
         id: smoke
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
         run: |
-          base="${STAGING_HOST:-localhost}"
-          if bash scripts/smoke-test.sh "$base"; then
+          if bash scripts/smoke-test.sh "${{ secrets.STAGING_HOST }}"; then
             echo "passed=true" >> "$GITHUB_OUTPUT"
           else
             echo "passed=false" >> "$GITHUB_OUTPUT"
@@ -180,27 +199,14 @@ jobs:
       - name: Rollback on failure
         if: steps.smoke.outputs.passed == 'false' && vars.LAST_SUCCESSFUL_DEPLOY_TAG != ''
         env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          EGAOP_MASTER_ENCRYPTION_KEY: ${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         run: |
           echo "Smoke tests failed. Rolling back to ${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}..."
-          export IMAGE_TAG="${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}"
-          cat > .env <<EOF
-          IMAGE_TAG=${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}
-          REGISTRY=${{ env.REGISTRY }}
-          LOG_LEVEL=debug
-          NODE_ENV=staging
-          POSTGRES_USER=egaop
-          POSTGRES_DB=egaop
-          EOF
-          docker compose pull --quiet
-          docker compose up -d --wait --wait-timeout 120 --remove-orphans
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
+            "cd ~/egaop && \
+             sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}/' .env && \
+             docker compose -f docker-compose.yml -f docker-compose.staging.yml -f docker-compose.deploy.yml pull --quiet && \
+             docker compose -f docker-compose.yml -f docker-compose.staging.yml -f docker-compose.deploy.yml up -d --wait --wait-timeout 120 --remove-orphans"
           bash scripts/rollback.sh "$SLACK_WEBHOOK" "${{ vars.LAST_SUCCESSFUL_DEPLOY_TAG }}"
 
   #############################################################################
@@ -244,51 +250,65 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
 
-      - name: Configure Docker context
+      - name: Add production host to known_hosts
         run: |
-          docker context create production \
-            --docker "host=ssh://${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}"
-          docker context use production
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.PRODUCTION_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Login to Registry
+      - name: Sync source to production
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='dist' \
+            --exclude='*.log' \
+            --exclude='.env' \
+            ./ ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:~/egaop/
 
-      - name: Write .env (non-secrets only)
+      - name: Fix permissions on production
         run: |
-          cat > .env <<EOF
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+            "chmod +x ~/egaop/scripts/*.sh 2>/dev/null || true"
+
+      - name: Write .env on production
+        run: |
+          cat <<'ENVEOF' | ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} "cat > ~/egaop/.env"
           IMAGE_TAG=${{ env.IMAGE_TAG }}
           REGISTRY=${{ env.REGISTRY }}
+          IMAGE_NAMESPACE=${{ env.IMAGE_NAMESPACE }}
           LOG_LEVEL=info
           NODE_ENV=production
           POSTGRES_USER=egaop
           POSTGRES_DB=egaop
-          EOF
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EGAOP_MASTER_ENCRYPTION_KEY=${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
+          INTERNAL_SERVICE_TOKEN=${{ secrets.INTERNAL_SERVICE_TOKEN }}
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          ENVEOF
 
-      - name: Run database migrations
-        env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          EGAOP_MASTER_ENCRYPTION_KEY: ${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-        run: docker compose run --rm migrate up
+      - name: Login to registry on production
+        run: |
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+            "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin"
 
-      - name: Pull images
-        run: docker compose pull --quiet
+      - name: Run database migrations on production
+        run: |
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.deploy.yml run --rm migrate up"
 
-      - name: Deploy
-        env:
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          EGAOP_MASTER_ENCRYPTION_KEY: ${{ secrets.EGAOP_MASTER_ENCRYPTION_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
-          INTERNAL_SERVICE_TOKEN: ${{ secrets.INTERNAL_SERVICE_TOKEN }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-        run: docker compose up -d --wait --wait-timeout 180 --remove-orphans
+      - name: Pull images on production
+        run: |
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.deploy.yml pull --quiet"
+
+      - name: Deploy on production
+        run: |
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+            "cd ~/egaop && docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d --wait --wait-timeout 180 --remove-orphans"
 
       - name: Health check poll
         run: |
@@ -307,7 +327,7 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test
+      - name: Run smoke tests
         run: bash scripts/smoke-test.sh "${{ secrets.PRODUCTION_HOST }}"
 
       - name: Notify success
