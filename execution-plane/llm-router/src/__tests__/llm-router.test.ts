@@ -50,7 +50,7 @@ describe("LLM Router", () => {
   describe("PRICING", () => {
     it("should have pricing for expected models", () => {
       expect(PRICING["gpt-4o"]).toBeDefined();
-      expect(PRICING["claude-3-5-sonnet"]).toBeDefined();
+      expect(PRICING["claude-3-5-sonnet-20241022"]).toBeDefined();
       expect(PRICING["gpt-3.5-turbo"]).toBeDefined();
     });
 

@@ -133,10 +133,13 @@ server.addService(toolService.service, {
 
     logger.info({ agent_id, execution_id, tool_name }, "Incoming tool invocation");
 
-    const rateKey = `${extractNamespace(agent_id)}:${agent_id}`;
+    const userId = call.metadata?.get("x-user-id")?.[0] as string | undefined;
+    const rateKey = userId
+      ? `user:${userId}:${tool_name}`
+      : `${extractNamespace(agent_id)}:${agent_id}:${tool_name}`;
     const { allowed, retryAfterMs } = rateLimiter.check(rateKey);
     if (!allowed) {
-      logger.warn({ agent_id, tool_name, retryAfterMs, rateKey }, "Rate limit hit");
+      logger.warn({ agent_id, tool_name, userId, retryAfterMs, rateKey }, "Rate limit hit");
       return callback({
         code: grpc.status.RESOURCE_EXHAUSTED,
         message: `Rate limit exceeded. Retry after ${Math.ceil(retryAfterMs / 1000)}s.`,

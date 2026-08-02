@@ -53,15 +53,33 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const llmService = egaopProto.egaop.v1.LLMService;
 
+// ─── Multi-Model Pricing (OpenAI, Anthropic, Ollama/local) ──────────────
+
 const PRICING: Record<string, { input: number; output: number }> = {
+  // OpenAI
   "gpt-4o": { input: 0.0025, output: 0.01 },
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-  "claude-3-5-sonnet": { input: 0.003, output: 0.015 },
   "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
+  // Anthropic
+  "claude-3-5-sonnet-20241022": { input: 0.003, output: 0.015 },
+  "claude-3-5-haiku-20241022": { input: 0.001, output: 0.005 },
+  "claude-3-opus-20240229": { input: 0.015, output: 0.075 },
+  // Ollama / local (free)
   "llama3-8b-8192": { input: 0, output: 0 },
   "llama3-70b-8192": { input: 0.00059, output: 0.00079 },
   "mixtral-8x7b-32768": { input: 0.00024, output: 0.00024 },
 };
+
+// ─── Provider Detection ────────────────────────────────────────────────
+
+type ModelProvider = "openai" | "anthropic" | "ollama";
+
+function detectProvider(model: string): ModelProvider {
+  if (model.startsWith("claude-")) return "anthropic";
+  // Ollama models are typically lowercase with no dots, like llama3, mistral, etc.
+  if (model.startsWith("llama") || model.startsWith("mixtral") || model.startsWith("mistral") || model.startsWith("codellama") || model.startsWith("phi-") || model.startsWith("deepseek")) return "ollama";
+  return "openai";
+}
 
 const FALLBACK_CHAIN = process.env.LLM_FALLBACK_CHAIN
   ? process.env.LLM_FALLBACK_CHAIN.split(",")
@@ -121,6 +139,8 @@ interface CompletionUsage {
   total_tokens: number;
 }
 
+// ─── OpenAI Client ────────────────────────────────────────────────────────
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
@@ -139,10 +159,22 @@ const MODEL_TO_OPENAI = {
   "gpt-4o": process.env.OPENAI_BASE_URL?.includes("openrouter") ? "openai/gpt-4o" : "gpt-4o",
   "gpt-4o-mini": process.env.OPENAI_BASE_URL?.includes("openrouter") ? "openai/gpt-4o-mini" : "gpt-4o-mini",
   "gpt-3.5-turbo": process.env.OPENAI_BASE_URL?.includes("openrouter") ? "openai/gpt-3.5-turbo" : "gpt-3.5-turbo",
+  "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
+  "claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022",
+  "claude-3-opus-20240229": "claude-3-opus-20240229",
   "llama3-8b-8192": "llama3-8b-8192",
   "llama3-70b-8192": "llama3-70b-8192",
   "mixtral-8x7b-32768": "mixtral-8x7b-32768",
 } as Record<string, string>;
+
+// ─── Anthropic Client ─────────────────────────────────────────────────────
+
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com";
+
+// ─── Ollama Client ─────────────────────────────────────────────────────────
+
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 
 function countTokens(text: string): number {
   const enc = get_encoding("cl100k_base");
@@ -172,7 +204,144 @@ interface ToolCallResult {
   arguments: string;
 }
 
-async function callOpenAIWithFallback(
+// ─── Anthropic API Call ────────────────────────────────────────────────────
+
+async function callAnthropic(
+  messages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  toolDefinitions: ToolDef[] | undefined,
+): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY not configured");
+  }
+
+  // Anthropic uses a separate system message
+  const systemMsg = messages.find((m: any) => m.role === "system");
+  const nonSystemMsgs = messages.filter((m: any) => m.role !== "system");
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: Math.min(maxTokens || 4096, 16384),
+    messages: nonSystemMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+  };
+  if (systemMsg) body.system = systemMsg.content;
+  if (temperature !== undefined) body.temperature = temperature;
+
+  if (toolDefinitions?.length) {
+    body.tools = toolDefinitions.map((td) => ({
+      name: td.name,
+      description: td.description,
+      input_schema: td.input_schema || { type: "object", properties: {} },
+    }));
+  }
+
+  const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    const err: any = new Error(`Anthropic API error ${response.status}: ${errBody}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  const data = await response.json() as any;
+  const content = data.content?.find((c: any) => c.type === "text")?.text ?? null;
+  const toolUseBlocks = data.content?.filter((c: any) => c.type === "tool_use") ?? [];
+
+  const toolCalls: ToolCallResult[] = toolUseBlocks.map((tc: any) => ({
+    id: tc.id,
+    name: tc.name,
+    arguments: JSON.stringify(tc.input),
+  }));
+
+  return {
+    content,
+    toolCalls,
+    model,
+    usage: {
+      prompt_tokens: data.usage?.input_tokens ?? 0,
+      completion_tokens: data.usage?.output_tokens ?? 0,
+      total_tokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+    },
+  };
+}
+
+// ─── Ollama API Call ───────────────────────────────────────────────────────
+
+async function callOllama(
+  messages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  toolDefinitions: ToolDef[] | undefined,
+): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+    stream: false,
+    options: {
+      temperature,
+      num_predict: Math.min(maxTokens || 4096, 16384),
+    },
+  };
+
+  if (toolDefinitions?.length) {
+    body.tools = toolDefinitions.map((td) => ({
+      type: "function",
+      function: {
+        name: td.name,
+        description: td.description,
+        parameters: td.input_schema || { type: "object", properties: {} },
+      },
+    }));
+  }
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    const err: any = new Error(`Ollama API error ${response.status}: ${errBody}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  const data = await response.json() as any;
+  const msg = data.message;
+  const toolCalls: ToolCallResult[] = (msg?.tool_calls ?? []).map((tc: any) => ({
+    id: `ollama-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: tc.function?.name ?? tc.name ?? "unknown",
+    arguments: JSON.stringify(tc.function?.arguments ?? tc.arguments ?? {}),
+  }));
+
+  return {
+    content: msg?.content ?? null,
+    toolCalls,
+    model,
+    usage: {
+      prompt_tokens: data.prompt_eval_count ?? 0,
+      completion_tokens: data.eval_count ?? 0,
+      total_tokens: (data.prompt_eval_count ?? 0) + (data.eval_count ?? 0),
+    },
+  };
+}
+
+// ─── Unified Multi-Model Fallback ─────────────────────────────────────────
+
+async function callLLMWithFallback(
   openaiMessages: any[],
   preferredModel: string,
   temperature: number,
@@ -180,17 +349,29 @@ async function callOpenAIWithFallback(
   toolDefinitions: ToolDef[] | undefined,
   signal?: AbortSignal
 ): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
-  if (!openai) {
-    throw new Error("OpenAI client not initialized (missing OPENAI_API_KEY)");
-  }
-
   const models = [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)];
 
   for (const model of models) {
-    const openaiModel = MODEL_TO_OPENAI[model];
-    if (!openaiModel) continue;
+    const provider = detectProvider(model);
 
     try {
+      if (provider === "anthropic") {
+        const result = await retryWithBackoff(async () => callAnthropic(openaiMessages, model, temperature, maxTokens, toolDefinitions), 3, 1000);
+        return result;
+      }
+
+      if (provider === "ollama") {
+        const result = await retryWithBackoff(async () => callOllama(openaiMessages, model, temperature, maxTokens, toolDefinitions), 2, 1000);
+        return result;
+      }
+
+      // Default: OpenAI-compatible API
+      if (!openai) {
+        logger.warn({ model }, "OpenAI client not configured, skipping");
+        continue;
+      }
+
+      const openaiModel = MODEL_TO_OPENAI[model] ?? model;
       const result = await retryWithBackoff(async () => {
         const openaiTools = toolDefinitions?.map((td) => ({
           type: "function" as const,
@@ -241,14 +422,12 @@ async function callOpenAIWithFallback(
     } catch (err: any) {
       const status = err.status || err.statusCode || 0;
 
-      // Non-retryable errors propagate immediately (no fallback)
       if (status === 400 || status === 422) {
         throw new LLM400Error(`LLM bad request: ${err.message}`, { statusCode: status, model });
       }
       if (status === 401 || status === 403) {
         throw new LLMAuthError(`LLM auth failed: ${err.message}`, { model });
       }
-      // 429 with retry exhausted — try next model in fallback chain
       if (status === 429 || err instanceof LLMRateLimitError) {
         logger.warn({ model, err: err.message }, "Rate limit retries exhausted, trying fallback model");
         continue;
@@ -256,6 +435,7 @@ async function callOpenAIWithFallback(
 
       logger.warn({
         model,
+        provider,
         err: err.message,
         status,
         errorBody: err.error ? JSON.stringify(err.error).slice(0, 3000) : undefined,
@@ -270,7 +450,7 @@ async function callOpenAIWithFallback(
 // Wrap with circuit breaker
 const circuitBreaker = new CircuitBreaker(
   (messages: any[], model: string, temp: number, maxTokens: number | undefined, tools: ToolDef[] | undefined, signal?: AbortSignal) =>
-    callOpenAIWithFallback(messages, model, temp, maxTokens, tools, signal),
+    callLLMWithFallback(messages, model, temp, maxTokens, tools, signal),
   circuitBreakerOptions
 );
 
@@ -429,7 +609,7 @@ server.addService(llmService.service, {
 
 server.addService(HEALTH_SERVICE, {
   check: (_call: any, callback: any) => {
-    const healthy = openai && circuitState !== "open";
+    const healthy = circuitState !== "open" && (!!openai || !!ANTHROPIC_API_KEY || true); // Ollama is always available
     callback(null, { status: healthy ? "SERVING" : "NOT_SERVING" });
   }
 });
@@ -449,14 +629,18 @@ if (process.env.NODE_ENV !== "test") {
 
   const healthServer = http.createServer((req, res) => {
     if (req.url === "/healthz" || req.url === "/readyz") {
-      const healthy = openai && circuitState !== "open";
+      const healthy = circuitState !== "open";
       const code = healthy ? 200 : 503;
       res.writeHead(code, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         status: healthy ? "SERVING" : "NOT_SERVING",
         service: "llm-router",
         circuit_breaker: circuitState,
-        openai_configured: !!openai,
+        providers: {
+          openai: !!openai,
+          anthropic: !!ANTHROPIC_API_KEY,
+          ollama: true, // Always available locally
+        },
       }));
     } else {
       res.writeHead(404);
@@ -482,4 +666,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, PRICING, countTokens, calculateCost, RateLimiter, rateLimiter };
+export { server, PRICING, countTokens, calculateCost, RateLimiter, rateLimiter, detectProvider, ANTHROPIC_API_KEY, OLLAMA_BASE_URL };

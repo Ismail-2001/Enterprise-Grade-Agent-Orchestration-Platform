@@ -18,6 +18,7 @@ import cookie from "@fastify/cookie";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import pino from "pino";
+import { WebSocketServer, WebSocket } from "ws";
 import { Connection, Client } from "@temporalio/client";
 import { getServerCredentials } from "@e-gaop/shared";
 import { namespaceHandlers } from "./namespaces/handler";
@@ -128,6 +129,8 @@ fastify.register(rateLimit, {
   max: Number(process.env.RATE_LIMIT_MAX) || 100,
   timeWindow: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
   keyGenerator: (request) => {
+    const userId = (request as any).userId || (request as any).user?.id;
+    if (userId) return `user:${userId}`;
     const ip = request.ip ?? request.socket.remoteAddress ?? "unknown";
     return `ip:${ip}`;
   },
@@ -141,11 +144,14 @@ fastify.register(swagger, {
     openapi: "3.0.0",
     info: {
       title: "E-GAOP API",
-      description: "Enterprise-Grade Agent Orchestration Platform API",
+      description: "Enterprise-Grade Agent Orchestration Platform API — manage agents, namespaces, executions, and observability across the platform.",
       version: "1.0.0",
+      contact: { name: "E-GAOP Team", url: "https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents" },
+      license: { name: "MIT", url: "https://opensource.org/licenses/MIT" },
     },
     servers: [
       { url: `http://localhost:${process.env.API_SERVER_REST_PORT || 3001}`, description: "Development" },
+      { url: "https://api.egaop.io", description: "Production" },
     ],
     components: {
       securitySchemes: {
@@ -153,10 +159,113 @@ fastify.register(swagger, {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
+          description: "JWT token obtained from /api/auth/login",
+        },
+      },
+      schemas: {
+        Agent: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "Unique agent identifier" },
+            name: { type: "string", description: "Agent name" },
+            version: { type: "string", example: "v1" },
+            namespace: { type: "string", description: "Namespace the agent belongs to" },
+            status: { type: "string", enum: ["pending", "running", "succeeded", "failed", "cancelled"] },
+            health: { type: "string", enum: ["Healthy", "Unhealthy", "Unknown"] },
+            createdAt: { type: "string", format: "date-time" },
+            spec: { type: "object", description: "Agent specification (model, tools, prompt)" },
+            owner: { type: "string" },
+          },
+        },
+        AgentExecution: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            agentId: { type: "string" },
+            agentName: { type: "string" },
+            namespace: { type: "string" },
+            status: { type: "string", enum: ["running", "succeeded", "failed", "cancelled", "timeout"] },
+            startTime: { type: "string", format: "date-time" },
+            endTime: { type: "string", format: "date-time", nullable: true },
+            durationMs: { type: "number", nullable: true },
+            costUsd: { type: "number" },
+          },
+        },
+        Namespace: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            displayName: { type: "string" },
+            agentCount: { type: "number" },
+            status: { type: "string", enum: ["active", "inactive"] },
+            createdAt: { type: "string", format: "date-time" },
+            tier: { type: "string", enum: ["sandbox", "production", "enterprise"] },
+            quotas: {
+              type: "object",
+              properties: {
+                maxAgents: { type: "number" },
+                concurrentExecutions: { type: "number" },
+                toolCallsPerMinute: { type: "number" },
+              },
+            },
+          },
+        },
+        Trace: {
+          type: "object",
+          properties: {
+            traceId: { type: "string" },
+            agentId: { type: "string" },
+            startTime: { type: "string", format: "date-time" },
+            endTime: { type: "string", format: "date-time" },
+            durationMs: { type: "number" },
+            spanCount: { type: "number" },
+            errorCount: { type: "number" },
+          },
+        },
+        Metrics: {
+          type: "object",
+          properties: {
+            activeAgents: { type: "number" },
+            executions24h: { type: "number" },
+            avgLatencyMs: { type: "number" },
+            errorRate: { type: "number" },
+            totalCostUsd: { type: "number" },
+            activeNamespaces: { type: "number" },
+          },
+        },
+        Error: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                message: { type: "string" },
+                code: { type: "string" },
+              },
+            },
+          },
+        },
+        PaginationMeta: {
+          type: "object",
+          properties: {
+            total: { type: "number" },
+            page: { type: "number" },
+            limit: { type: "number" },
+            hasNext: { type: "boolean" },
+          },
         },
       },
     },
     security: [{ bearerAuth: [] }],
+    tags: [
+      { name: "Agents", description: "Agent CRUD and execution management" },
+      { name: "Namespaces", description: "Namespace isolation and quotas" },
+      { name: "Traces", description: "Execution traces and replay" },
+      { name: "Metrics", description: "Platform metrics and monitoring" },
+      { name: "Auth", description: "Authentication and registration" },
+      { name: "Health", description: "Service health checks" },
+      { name: "Streaming", description: "WebSocket real-time event streaming" },
+    ],
   },
 });
 
@@ -354,7 +463,7 @@ fastify.get("/api/agents/:id/executions", async (request, reply) => {
 
     for await (const workflow of iterator) {
       // Extract agent ID from workflow args (first arg contains agentId)
-      const raw = workflow.raw as Record<string, unknown> | undefined;
+      const raw = (workflow as any).raw as Record<string, unknown> | undefined;
       const args = (raw?.executionInfo as any)?.type?.name === "reactWorkflow"
         ? (raw as any)?.memo?.payloads
         : undefined;
@@ -388,7 +497,7 @@ fastify.get("/api/agents/:id/executions", async (request, reply) => {
         durationMs,
         costUsd: 0, // Cost tracked in observability plane
         traceId: workflow.workflowId,
-        runId: workflow.runtimeStatus ?? undefined,
+        runId: (workflow as any).runtimeStatus ?? undefined,
       });
     }
 
@@ -604,6 +713,118 @@ fastify.delete("/api/agents/:id", async (request, reply) => {
   });
 });
 
+// ── Agent Version History ──
+
+fastify.get("/api/agents/:id/versions", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const q = request.query as Record<string, string>;
+  const namespace = q.namespace ?? "default";
+  const limit = parseInt(q.limit ?? "50", 10);
+
+  try {
+    const repo = await import("./agents/repository.js").then((m) => m.getAgentRepository());
+    await repo.ensureVersionTable();
+    const versions = await repo.getVersionHistory(namespace, id, limit);
+    return apiResponse(versions.map((v: any) => ({
+      id: v.id,
+      agentId: v.agent_id,
+      namespace: v.namespace,
+      name: v.name,
+      version: v.version,
+      spec: v.spec,
+      labels: v.labels,
+      annotations: v.annotations,
+      createdBy: v.created_by,
+      createdAt: v.created_at,
+      changeSummary: v.change_summary,
+    })));
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: errMsg, agentId: id }, "Failed to get version history");
+    return apiResponse([]);
+  }
+});
+
+fastify.get("/api/agents/:id/versions/:version", async (request, reply) => {
+  const { id, version } = request.params as { id: string; version: string };
+  const q = request.query as Record<string, string>;
+  const namespace = q.namespace ?? "default";
+  const versionNum = parseInt(version, 10);
+
+  if (isNaN(versionNum)) {
+    reply.code(400);
+    return { error: { message: "Version must be a number", code: "BAD_REQUEST" } };
+  }
+
+  try {
+    const repo = await import("./agents/repository.js").then((m) => m.getAgentRepository());
+    await repo.ensureVersionTable();
+    const versionData = await repo.getVersion(namespace, id, versionNum);
+    if (!versionData) {
+      reply.code(404);
+      return { error: { message: `Version ${versionNum} not found for agent ${id}`, code: "NOT_FOUND" } };
+    }
+    return apiResponse({
+      id: versionData.id,
+      agentId: versionData.agent_id,
+      namespace: versionData.namespace,
+      name: versionData.name,
+      version: versionData.version,
+      spec: versionData.spec,
+      labels: versionData.labels,
+      annotations: versionData.annotations,
+      createdBy: versionData.created_by,
+      createdAt: versionData.created_at,
+      changeSummary: versionData.change_summary,
+    });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    reply.code(500);
+    return { error: { message: "Failed to get version", code: "INTERNAL" } };
+  }
+});
+
+// ── Agent Rollback ──
+
+fastify.post("/api/agents/:id/rollback", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const body = request.body as { version?: number; namespace?: string } | undefined;
+  const namespace = body?.namespace ?? "default";
+  const targetVersion = body?.version;
+
+  if (!targetVersion || isNaN(targetVersion)) {
+    reply.code(400);
+    return { error: { message: "Target version number is required", code: "BAD_REQUEST" } };
+  }
+
+  try {
+    const repo = await import("./agents/repository.js").then((m) => m.getAgentRepository());
+    await repo.ensureVersionTable();
+    const rolledBack = await repo.rollbackToVersion(namespace, id, targetVersion);
+
+    if (!rolledBack) {
+      reply.code(404);
+      return { error: { message: `Agent or version not found`, code: "NOT_FOUND" } };
+    }
+
+    logger.info({ agentId: id, namespace, targetVersion, newVersion: rolledBack.version }, "Agent rolled back");
+
+    return apiResponse({
+      id: rolledBack.id,
+      name: rolledBack.name,
+      namespace: rolledBack.namespace,
+      version: `v${rolledBack.version}`,
+      spec: rolledBack.spec,
+      rolledBackToVersion: targetVersion,
+    });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: errMsg, agentId: id }, "Rollback failed");
+    reply.code(500);
+    return { error: { message: "Rollback failed", code: "INTERNAL" } };
+  }
+});
+
 // ── Namespaces REST ──
 
 fastify.get("/api/namespaces", async () => {
@@ -752,6 +973,7 @@ fastify.get("/api/metrics", async () => {
     let total = 0;
     let recentCount = 0;
     let totalLatencyMs = 0;
+    let totalCostUsd = 0;
 
     for await (const info of iterable) {
       total++;
@@ -764,6 +986,14 @@ fastify.get("/api/metrics", async () => {
         if (info.closeTime) {
           totalLatencyMs += info.closeTime.getTime() - info.startTime.getTime();
         }
+        // Extract cost from workflow memo if available
+        const raw = (info as any).raw as Record<string, unknown> | undefined;
+        const memo = raw?.memo as Record<string, unknown> | undefined;
+        if (memo?.totalCost) {
+          const costStr = String(memo.totalCost).replace("$", "");
+          const costVal = parseFloat(costStr);
+          if (!isNaN(costVal)) totalCostUsd += costVal;
+        }
       }
     }
 
@@ -772,7 +1002,7 @@ fastify.get("/api/metrics", async () => {
       executions24h: recentCount,
       avgLatencyMs: recentCount > 0 ? Math.round(totalLatencyMs / recentCount) : 0,
       errorRate: total > 0 ? Number(((failed / total) * 100).toFixed(2)) : 0,
-      totalCostUsd: recentCount * 0.003,
+      totalCostUsd: Number(totalCostUsd.toFixed(6)),
       activeNamespaces: 1,
     });
   } catch {
@@ -787,8 +1017,22 @@ fastify.get("/api/metrics", async () => {
   }
 });
 
-// ── SSE Events ──
+// ── WebSocket Event Streaming ──
 
+const executionSubscribers = new Map<string, Set<WebSocket>>();
+
+function broadcastToExecution(executionId: string, event: string, data: Record<string, unknown>) {
+  const subscribers = executionSubscribers.get(executionId);
+  if (!subscribers || subscribers.size === 0) return;
+  const payload = JSON.stringify({ event, data, timestamp: new Date().toISOString() });
+  for (const ws of subscribers) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    }
+  }
+}
+
+// SSE fallback for clients without WebSocket support
 fastify.get("/api/events", async (request, reply) => {
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -806,6 +1050,105 @@ fastify.get("/api/events", async (request, reply) => {
 
   request.raw.on("close", () => {
     clearInterval(interval);
+  });
+});
+
+// WebSocket endpoint for real-time execution streaming
+// Connect to: ws://host:port/api/ws/executions/:executionId
+fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async (socket: any, request: any) => {
+  const { executionId } = request.params as { executionId: string };
+
+  logger.info({ executionId }, "WebSocket client connected for execution streaming");
+
+  // Register subscriber
+  if (!executionSubscribers.has(executionId)) {
+    executionSubscribers.set(executionId, new Set());
+  }
+  executionSubscribers.get(executionId)!.add(socket);
+
+  // Send initial status from Temporal
+  try {
+    const client = await getTemporalClient();
+    const handle = client.workflow.getHandle(executionId);
+    const describe = await handle.describe();
+    socket.send(JSON.stringify({
+      event: "connected",
+      data: {
+        executionId,
+        status: describe.status.name,
+        startTime: describe.startTime?.toISOString(),
+      },
+      timestamp: new Date().toISOString(),
+    }));
+
+    // Poll Temporal for status updates and push to subscribers
+    const pollInterval = setInterval(async () => {
+      try {
+        const info = await handle.describe();
+        const statusMap: Record<string, string> = {
+          RUNNING: "running",
+          COMPLETED: "succeeded",
+          FAILED: "failed",
+          CANCELLED: "cancelled",
+          TERMINATED: "terminated",
+          TIMED_OUT: "timeout",
+        };
+        broadcastToExecution(executionId, "status_update", {
+          executionId,
+          status: statusMap[info.status.name] ?? info.status.name?.toLowerCase(),
+          lastEventTimestamp: new Date().toISOString(),
+        });
+
+        // If execution is terminal, send final event and clean up
+        if (["COMPLETED", "FAILED", "CANCELLED", "TERMINATED", "TIMED_OUT"].includes(info.status.name)) {
+          const closeTime = (info as any).closeTime;
+          broadcastToExecution(executionId, "execution_finished", {
+            executionId,
+            status: statusMap[info.status.name],
+            endTime: closeTime?.toISOString(),
+          });
+          clearInterval(pollInterval);
+        }
+      } catch {
+        // Execution may have been deleted
+        clearInterval(pollInterval);
+      }
+    }, 3000);
+
+    // Clean up on disconnect
+    socket.on("close", () => {
+      logger.info({ executionId }, "WebSocket client disconnected");
+      executionSubscribers.get(executionId)?.delete(socket);
+      if (executionSubscribers.get(executionId)?.size === 0) {
+        executionSubscribers.delete(executionId);
+      }
+    });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    socket.send(JSON.stringify({
+      event: "error",
+      data: { message: `Failed to subscribe: ${errMsg}` },
+      timestamp: new Date().toISOString(),
+    }));
+    socket.close();
+  }
+});
+
+// Global WebSocket endpoint for all events (broadcasts to all connected clients)
+const globalSubscribers = new Set<WebSocket>();
+
+fastify.get("/api/ws/events", { websocket: true } as any, async (socket: any) => {
+  logger.info("WebSocket client connected to global event stream");
+  globalSubscribers.add(socket);
+
+  socket.send(JSON.stringify({
+    event: "connected",
+    data: { message: "Connected to E-GAOP event stream" },
+    timestamp: new Date().toISOString(),
+  }));
+
+  socket.on("close", () => {
+    globalSubscribers.delete(socket);
   });
 });
 

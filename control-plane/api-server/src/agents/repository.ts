@@ -18,6 +18,20 @@ export interface AgentRow {
   deleted_at: string | null;
 }
 
+export interface AgentVersionRow {
+  id: string;
+  agent_id: string;
+  namespace: string;
+  name: string;
+  version: number;
+  spec: Record<string, unknown>;
+  labels: Record<string, string>;
+  annotations: Record<string, string>;
+  created_by: string;
+  created_at: string;
+  change_summary: string;
+}
+
 interface AgentRepositoryConfig {
   host: string;
   port: number;
@@ -165,11 +179,27 @@ export class AgentRepository {
       spec?: Record<string, unknown>;
       labels?: Record<string, string>;
       annotations?: Record<string, string>;
+      changeSummary?: string;
     }
   ): Promise<AgentRow | null> {
     const sets: string[] = [];
     const setValues: unknown[] = [];
     let paramIndex = 3;
+
+    // Create version snapshot before updating
+    const currentAgent = await this.findByNamespaceAndName(namespace, name);
+    if (currentAgent) {
+      try {
+        await this.createVersionSnapshot(
+          currentAgent.id, namespace, name, currentAgent.version,
+          currentAgent.spec, currentAgent.labels, currentAgent.annotations,
+          params.changeSummary ? "user" : "system",
+          params.changeSummary || `Updated to v${currentAgent.version + 1}`
+        );
+      } catch {
+        // Version snapshot failure is non-fatal
+      }
+    }
 
     if (params.spec) {
       sets.push(`spec = spec || $${paramIndex++}::jsonb`);
@@ -217,6 +247,93 @@ export class AgentRepository {
     return this.mapRow(result.rows[0]!);
   }
 
+  // ─── Agent Version History ─────────────────────────────────────────────
+
+  async createVersionSnapshot(agentId: string, namespace: string, name: string, version: number, spec: Record<string, unknown>, labels: Record<string, string>, annotations: Record<string, string>, createdBy: string, changeSummary: string = ""): Promise<AgentVersionRow> {
+    const id = crypto.randomUUID();
+    const result = await this.pool.query(
+      `INSERT INTO agent_versions (id, agent_id, namespace, name, version, spec, labels, annotations, created_by, change_summary)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10)
+       RETURNING id, agent_id, namespace, name, version, spec, labels, annotations, created_by, created_at, change_summary`,
+      [id, agentId, namespace, name, version, JSON.stringify(spec), JSON.stringify(labels), JSON.stringify(annotations), createdBy, changeSummary]
+    );
+    return this.mapVersionRow(result.rows[0]!);
+  }
+
+  async getVersionHistory(namespace: string, name: string, limit: number = 50): Promise<AgentVersionRow[]> {
+    const result = await this.pool.query(
+      `SELECT id, agent_id, namespace, name, version, spec, labels, annotations, created_by, created_at, change_summary
+       FROM agent_versions
+       WHERE namespace = $1 AND name = $2
+       ORDER BY version DESC
+       LIMIT $3`,
+      [namespace, name, limit]
+    );
+    return result.rows.map((row) => this.mapVersionRow(row));
+  }
+
+  async getVersion(namespace: string, name: string, version: number): Promise<AgentVersionRow | null> {
+    const result = await this.pool.query(
+      `SELECT id, agent_id, namespace, name, version, spec, labels, annotations, created_by, created_at, change_summary
+       FROM agent_versions
+       WHERE namespace = $1 AND name = $2 AND version = $3`,
+      [namespace, name, version]
+    );
+    if (result.rows.length === 0) return null;
+    return this.mapVersionRow(result.rows[0]!);
+  }
+
+  async rollbackToVersion(namespace: string, name: string, targetVersion: number): Promise<AgentRow | null> {
+    const versionSnapshot = await this.getVersion(namespace, name, targetVersion);
+    if (!versionSnapshot) return null;
+
+    const currentAgent = await this.findByNamespaceAndName(namespace, name);
+    if (!currentAgent) return null;
+
+    // Save current version as a snapshot before rollback
+    await this.createVersionSnapshot(
+      currentAgent.id, namespace, name, currentAgent.version,
+      currentAgent.spec, currentAgent.labels, currentAgent.annotations,
+      "system", `Auto-saved before rollback to v${targetVersion}`
+    );
+
+    // Restore the target version's spec, labels, and annotations
+    const result = await this.pool.query(
+      `UPDATE agents
+       SET spec = $3::jsonb, labels = $4::jsonb, annotations = $5::jsonb,
+           version = version + 1, updated_at = NOW()
+       WHERE namespace = $1 AND name = $2 AND deleted_at IS NULL
+       RETURNING id, namespace, name, api_version, kind, spec, status, labels, annotations,
+                 version, created_by, created_at, updated_at, deleted_at`,
+      [namespace, name, JSON.stringify(versionSnapshot.spec), JSON.stringify(versionSnapshot.labels), JSON.stringify(versionSnapshot.annotations)]
+    );
+
+    if (result.rows.length === 0) return null;
+    return this.mapRow(result.rows[0]!);
+  }
+
+  // ─── Schema bootstrap ──────────────────────────────────────────────────
+
+  async ensureVersionTable(): Promise<void> {
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS agent_versions (
+        id UUID PRIMARY KEY,
+        agent_id UUID NOT NULL,
+        namespace TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        spec JSONB NOT NULL DEFAULT '{}',
+        labels JSONB NOT NULL DEFAULT '{}',
+        annotations JSONB NOT NULL DEFAULT '{}',
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        change_summary TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_versions_ns_name ON agent_versions (namespace, name);
+      CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id ON agent_versions (agent_id);
+    `);
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
@@ -237,6 +354,22 @@ export class AgentRepository {
       created_at: row["created_at"] as string,
       updated_at: row["updated_at"] as string,
       deleted_at: row["deleted_at"] as string | null,
+    };
+  }
+
+  private mapVersionRow(row: Record<string, unknown>): AgentVersionRow {
+    return {
+      id: row["id"] as string,
+      agent_id: row["agent_id"] as string,
+      namespace: row["namespace"] as string,
+      name: row["name"] as string,
+      version: parseInt(row["version"] as string, 10),
+      spec: typeof row["spec"] === "string" ? JSON.parse(row["spec"] as string) : (row["spec"] as Record<string, unknown>),
+      labels: typeof row["labels"] === "string" ? JSON.parse(row["labels"] as string) : (row["labels"] as Record<string, string>),
+      annotations: typeof row["annotations"] === "string" ? JSON.parse(row["annotations"] as string) : (row["annotations"] as Record<string, string>),
+      created_by: row["created_by"] as string,
+      created_at: row["created_at"] as string,
+      change_summary: row["change_summary"] as string,
     };
   }
 }

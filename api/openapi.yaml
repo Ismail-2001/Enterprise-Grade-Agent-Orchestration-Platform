@@ -1,0 +1,836 @@
+openapi: "3.0.3"
+info:
+  title: E-GAOP API
+  description: |
+    Enterprise-Grade Agent Orchestration Platform API.
+
+    This API provides a Kubernetes-inspired control plane for managing AI agents,
+    including namespace isolation, policy enforcement, execution management,
+    and observability.
+
+    ## Authentication
+    All endpoints except `/api/auth/login`, `/api/auth/register`, and `/health`
+    require a JWT Bearer token in the `Authorization` header.
+
+    ## Rate Limiting
+    API requests are rate-limited per IP (100 req/min default) or per user
+    when authenticated (120 req/min for tool-proxy).
+
+    ## Namespace Isolation
+    All resources are scoped to namespaces. Agents, executions, memory, and
+    tool calls are isolated between namespaces.
+  version: "1.0.0"
+  contact:
+    name: E-GAOP Team
+    url: https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001
+    description: Development
+  - url: https://api.egaop.io
+    description: Production
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from POST /api/auth/login
+
+  schemas:
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: string
+          example: "v1"
+        namespace:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed, cancelled]
+        health:
+          type: string
+          enum: [Healthy, Unhealthy, Unknown]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        spec:
+          type: object
+          description: Agent specification (model, tools, system prompt)
+          properties:
+            model:
+              type: string
+              description: LLM model identifier
+              example: "gpt-4o"
+            systemPrompt:
+              type: string
+            tools:
+              type: array
+              items:
+                type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+        owner:
+          type: string
+        apiVersion:
+          type: string
+          example: "egaop.io/v1"
+        kind:
+          type: string
+          example: "Agent"
+
+    AgentExecution:
+      type: object
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        agentName:
+          type: string
+        namespace:
+          type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed, cancelled, timeout]
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: number
+          nullable: true
+        costUsd:
+          type: number
+        traceId:
+          type: string
+
+    Namespace:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        agentCount:
+          type: number
+        status:
+          type: string
+          enum: [active, inactive]
+        createdAt:
+          type: string
+          format: date-time
+        tier:
+          type: string
+          enum: [sandbox, production, enterprise]
+        quotas:
+          type: object
+          properties:
+            maxAgents:
+              type: number
+            concurrentExecutions:
+              type: number
+            toolCallsPerMinute:
+              type: number
+
+    Trace:
+      type: object
+      properties:
+        traceId:
+          type: string
+        agentId:
+          type: string
+        executionId:
+          type: string
+        operationName:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        durationMs:
+          type: number
+        spanCount:
+          type: number
+        errorCount:
+          type: number
+        spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Span"
+
+    Span:
+      type: object
+      properties:
+        spanId:
+          type: string
+        traceId:
+          type: string
+        operationName:
+          type: string
+        serviceName:
+          type: string
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        durationMs:
+          type: number
+        status:
+          type: string
+          enum: [ok, error, running]
+        attributes:
+          type: object
+
+    Metrics:
+      type: object
+      properties:
+        activeAgents:
+          type: number
+        executions24h:
+          type: number
+        avgLatencyMs:
+          type: number
+        errorRate:
+          type: number
+          description: Error rate as percentage
+        totalCostUsd:
+          type: number
+        activeNamespaces:
+          type: number
+
+    AgentVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        version:
+          type: number
+        spec:
+          type: object
+        labels:
+          type: object
+        annotations:
+          type: object
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        changeSummary:
+          type: string
+
+    RollbackRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+          description: Target version number to roll back to
+        namespace:
+          type: string
+          description: Namespace of the agent (defaults to "default")
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        name:
+          type: string
+
+    ApiResponse:
+      type: object
+      properties:
+        data:
+          type: object
+        meta:
+          type: object
+          properties:
+            traceId:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+            total:
+              type: number
+            page:
+              type: number
+            limit:
+              type: number
+            hasNext:
+              type: boolean
+        meta:
+          type: object
+          properties:
+            traceId:
+              type: string
+            timestamp:
+              type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+
+    WebSocketEvent:
+      type: object
+      description: WebSocket message format
+      properties:
+        event:
+          type: string
+          description: Event type (connected, status_update, execution_finished, error)
+        data:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+tags:
+  - name: Auth
+    description: Authentication and registration
+  - name: Agents
+    description: Agent CRUD and execution management
+  - name: Agent Versions
+    description: Agent version history and rollback
+  - name: Namespaces
+    description: Namespace isolation and quotas
+  - name: Traces
+    description: Execution traces and replay
+  - name: Metrics
+    description: Platform metrics and monitoring
+  - name: Health
+    description: Service health checks
+  - name: Streaming
+    description: WebSocket real-time event streaming
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Platform health check
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /api/health:
+    get:
+      tags: [Health]
+      summary: API server health check
+      security: []
+      responses:
+        "200":
+          description: Health status
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registration successful
+        "409":
+          description: Email already exists
+
+  /api/agents:
+    get:
+      tags: [Agents]
+      summary: List agents
+      parameters:
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, succeeded, failed, cancelled]
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+    post:
+      tags: [Agents]
+      summary: Create agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                namespace:
+                  type: string
+                  default: default
+                spec:
+                  type: object
+                  properties:
+                    model:
+                      type: string
+                    systemPrompt:
+                      type: string
+                    tools:
+                      type: array
+                      items:
+                        type: string
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "409":
+          description: Agent already exists
+
+  /api/agents/{id}:
+    get:
+      tags: [Agents]
+      summary: Get agent by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+            default: default
+      responses:
+        "200":
+          description: Agent details
+        "404":
+          description: Agent not found
+    delete:
+      tags: [Agents]
+      summary: Delete agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent deleted
+        "404":
+          description: Agent not found
+
+  /api/agents/{id}/run:
+    post:
+      tags: [Agents]
+      summary: Trigger agent execution
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: object
+                  properties:
+                    prompt:
+                      type: string
+                    systemPrompt:
+                      type: string
+                namespace:
+                  type: string
+      responses:
+        "200":
+          description: Execution started
+        "404":
+          description: Agent not found
+
+  /api/agents/{id}/executions:
+    get:
+      tags: [Agents]
+      summary: List agent executions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of executions
+
+  /api/agents/{id}/versions:
+    get:
+      tags: [Agent Versions]
+      summary: Get agent version history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentVersion"
+
+  /api/agents/{id}/versions/{version}:
+    get:
+      tags: [Agent Versions]
+      summary: Get specific agent version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: namespace
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Version details
+        "404":
+          description: Version not found
+
+  /api/agents/{id}/rollback:
+    post:
+      tags: [Agent Versions]
+      summary: Rollback agent to a previous version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RollbackRequest"
+      responses:
+        "200":
+          description: Rollback successful
+        "400":
+          description: Invalid version
+        "404":
+          description: Agent or version not found
+
+  /api/executions/{id}:
+    get:
+      tags: [Traces]
+      summary: Get execution status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Execution details
+        "404":
+          description: Execution not found
+
+  /api/executions/{id}/history:
+    get:
+      tags: [Traces]
+      summary: Get execution history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Execution history
+
+  /api/traces:
+    get:
+      tags: [Traces]
+      summary: List traces
+      parameters:
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of traces
+
+  /api/traces/{traceId}:
+    get:
+      tags: [Traces]
+      summary: Get trace details
+      parameters:
+        - name: traceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Trace details
+        "404":
+          description: Trace not found
+
+  /api/namespaces:
+    get:
+      tags: [Namespaces]
+      summary: List namespaces
+      responses:
+        "200":
+          description: List of namespaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Namespace"
+
+  /api/metrics:
+    get:
+      tags: [Metrics]
+      summary: Get platform metrics
+      responses:
+        "200":
+          description: Platform metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metrics"
+
+  /api/events:
+    get:
+      tags: [Streaming]
+      summary: SSE event stream (legacy)
+      description: Server-Sent Events endpoint for real-time updates. Prefer WebSocket endpoints for new integrations.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Event stream
+
+  /api/ws/executions/{executionId}:
+    get:
+      tags: [Streaming]
+      summary: WebSocket execution stream
+      description: |
+        Connect via WebSocket to receive real-time status updates for a specific execution.
+
+        **Events:**
+        - `connected`: Initial connection confirmation with current status
+        - `status_update`: Periodic status polling (every 3 seconds)
+        - `execution_finished`: Sent when execution reaches terminal state
+        - `error`: Error message
+
+        **Message format:**
+        ```json
+        {
+          "event": "status_update",
+          "data": { "executionId": "...", "status": "running" },
+          "timestamp": "2024-01-01T00:00:00.000Z"
+        }
+        ```
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+
+  /api/ws/events:
+    get:
+      tags: [Streaming]
+      summary: WebSocket global event stream
+      description: Connect via WebSocket to receive all platform events.
+      responses:
+        "101":
+          description: WebSocket upgrade successful

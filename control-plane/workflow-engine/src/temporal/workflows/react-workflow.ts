@@ -295,7 +295,7 @@ export async function reactWorkflow(
       agentId: input.agentId,
       executionId: input.executionId,
       namespace: input.namespace,
-      isolationLevel: "Standard",
+      isolationLevel: process.env.SANDBOX_ISOLATION_LEVEL || "Enhanced",
       initCommands: [`echo "Sandbox ${input.executionId} ready"`],
     });
     sandboxId = sandbox.id;
