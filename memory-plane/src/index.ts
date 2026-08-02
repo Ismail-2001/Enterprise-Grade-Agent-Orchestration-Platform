@@ -8,12 +8,13 @@ if (process.env.NODE_ENV !== "test") {
 
 import path from "path";
 import http from "http";
-import fs from "fs";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
 import Redis from "ioredis";
+import { Pool } from "pg";
 import { getServerCredentials } from "@e-gaop/shared";
+import { MemoryPlaneRepository } from "./repository";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
@@ -34,13 +35,14 @@ const logger = pino({
   } : {}),
 });
 
+// ─── Redis (fast path) ────────────────────────────────────────────────────
+
 const redis = new Redis({
   host: process.env.REDIS_HOST || "localhost",
   port: parseInt(process.env.REDIS_PORT || "6379", 10),
   password: process.env.REDIS_PASSWORD || undefined,
   lazyConnect: true,
   retryStrategy: (times) => Math.min(times * 50, 2000),
-  // Sentinel support for HA
   ...(process.env.REDIS_SENTINEL_HOSTS
     ? {
         sentinels: process.env.REDIS_SENTINEL_HOSTS.split(",").map((s) => {
@@ -57,6 +59,25 @@ const redis = new Redis({
 
 redis.on("error", (err) => logger.warn({ err: err.message }, "Redis connection issue"));
 redis.on("connect", () => logger.info("Connected to Redis"));
+
+// ─── PostgreSQL + pgvector (durable path) ─────────────────────────────────
+
+const pgPool = new Pool({
+  host: process.env.POSTGRES_HOST || "localhost",
+  port: parseInt(process.env.POSTGRES_PORT || "5432", 10),
+  database: process.env.POSTGRES_DB || "egaop",
+  user: process.env.POSTGRES_USER || "egaop",
+  password: process.env.POSTGRES_PASSWORD || "",
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+const memRepo = new MemoryPlaneRepository(pgPool);
+
+pgPool.on("error", (err) => logger.warn({ err: err.message }, "PostgreSQL connection issue"));
+
+// ─── Proto setup ──────────────────────────────────────────────────────────
 
 const PROTO_PATH = path.resolve(__dirname, "../../api/proto/egaop/v1/memory.proto");
 
@@ -94,14 +115,27 @@ server.addService(memoryService.service, {
       const safeType = sanitizeKeyComponent(memory_type);
       const safeKey = sanitizeKeyComponent(key);
 
+      // Fast path: try Redis first
       let data: any = null;
+      const redisKey = `egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`;
+      const raw = await redis.get(redisKey);
+      if (raw) {
+        data = JSON.parse(raw);
+      }
 
-      if (memory_type === "working") {
-        const raw = await redis.get(`egaop:${safeNs}:${safeAgent}:working:${safeKey}`);
-        if (raw) data = JSON.parse(raw);
-      } else {
-        const raw = await redis.get(`egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`);
-        if (raw) data = JSON.parse(raw);
+      // Slow path: fall back to PostgreSQL if not in Redis
+      if (!data) {
+        try {
+          const entry = await memRepo.get(namespace, agent_id, key);
+          if (entry) {
+            data = entry.value;
+            // Backfill Redis for faster subsequent reads
+            const ttl = memory_type === "working" ? 300 : 86400;
+            await redis.setex(redisKey, ttl, JSON.stringify(data));
+          }
+        } catch (pgErr: any) {
+          logger.warn({ err: pgErr.message }, "PostgreSQL read fallback failed");
+        }
       }
 
       callback(null, { data: data || {}, found: !!data });
@@ -126,7 +160,12 @@ server.addService(memoryService.service, {
       const serialized = JSON.stringify(data);
       const ttl = ttl_seconds || (memory_type === "working" ? 300 : 86400);
 
+      // Fast path: write to Redis
       await redis.setex(redisKey, ttl, serialized);
+
+      // Durable path: write to PostgreSQL (fire-and-forget for non-critical path)
+      memRepo.set(namespace, agent_id, key, data as Record<string, unknown>, ttl)
+        .catch((pgErr) => logger.warn({ err: pgErr.message }, "PostgreSQL write failed"));
 
       try {
         createAuditEntry(
@@ -156,6 +195,10 @@ server.addService(memoryService.service, {
       const redisKey = `egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`;
       await redis.del(redisKey);
 
+      // Also soft-delete from PostgreSQL
+      memRepo.delete(namespace, agent_id, key)
+        .catch((pgErr) => logger.warn({ err: pgErr.message }, "PostgreSQL delete failed"));
+
       try {
         createAuditEntry(
           "agent.tool_call",
@@ -179,6 +222,7 @@ server.addService(memoryService.service, {
       const safeAgent = sanitizeKeyComponent(agent_id);
       const safeType = sanitizeKeyComponent(memory_type);
 
+      // Try Redis first
       const pattern = `egaop:${safeNs}:${safeAgent}:${safeType}:*`;
       const entries: any[] = [];
       const stream = redis.scanStream({ match: pattern, count: 100 });
@@ -189,6 +233,19 @@ server.addService(memoryService.service, {
           entries.push({ key: name, data: raw ? JSON.parse(raw) : {} });
         }
       }
+
+      // Fall back to PostgreSQL if Redis returned nothing
+      if (entries.length === 0) {
+        try {
+          const pgEntries = await memRepo.list(namespace, agent_id);
+          for (const entry of pgEntries) {
+            entries.push({ key: entry.key, data: entry.value });
+          }
+        } catch (pgErr: any) {
+          logger.warn({ err: pgErr.message }, "PostgreSQL list fallback failed");
+        }
+      }
+
       callback(null, { entries });
     } catch (err: any) {
       callback(null, { entries: [] });
@@ -199,7 +256,7 @@ server.addService(memoryService.service, {
 server.addService(HEALTH_SERVICE, {
   check: async (_call: any, callback: any) => {
     try {
-      await redis.ping();
+      await Promise.all([redis.ping(), pgPool.query("SELECT 1")]);
       callback(null, { status: "SERVING" });
     } catch {
       callback(null, { status: "NOT_SERVING" });
@@ -210,6 +267,9 @@ server.addService(HEALTH_SERVICE, {
 if (process.env.NODE_ENV !== "test") {
   const MEMORY_PORT = process.env.MEMORY_PLANE_PORT || "50055";
   const HEALTH_PORT = parseInt(process.env.MEMORY_PLANE_HEALTH_PORT || "15055", 10);
+
+  // Start expired memory cleanup
+  memRepo.startCleanupInterval();
 
   server.bindAsync(`0.0.0.0:${MEMORY_PORT}`, getServerCredentials(), (err, port) => {
     if (err) {
@@ -223,13 +283,41 @@ if (process.env.NODE_ENV !== "test") {
   const healthServer = http.createServer(async (req, res) => {
     if (req.url === "/healthz" || req.url === "/readyz") {
       try {
-        await redis.ping();
+        await Promise.all([redis.ping(), pgPool.query("SELECT 1")]);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "SERVING", service: "memory-plane" }));
       } catch {
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "NOT_SERVING", service: "memory-plane" }));
       }
+    } else if (req.url === "/api/v1/memory/search" && req.method === "POST") {
+      // Vector similarity search endpoint (used by other services internally)
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const { namespace, embedding, top_k } = JSON.parse(body);
+          if (!namespace || !embedding) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "namespace and embedding required" }));
+            return;
+          }
+          const results = await memRepo.searchSimilar(namespace, embedding, top_k || 10);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            results: results.map((r) => ({
+              key: r.entry.key,
+              agent_id: r.entry.agentId,
+              value: r.entry.value,
+              similarity: r.similarity,
+            })),
+          }));
+        } catch (err: any) {
+          logger.error({ err: err.message }, "Vector search error");
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Search failed" }));
+        }
+      });
     } else {
       res.writeHead(404);
       res.end();
@@ -241,9 +329,11 @@ if (process.env.NODE_ENV !== "test") {
 
   const shutdown = async () => {
     logger.info("Shutting down Memory Plane...");
+    memRepo.stopCleanupInterval();
     server.tryShutdown(async () => {
       healthServer.close();
       redis.disconnect();
+      await pgPool.end();
       await shutdownTracing();
       logger.info("Memory Plane shut down");
       process.exit(0);
@@ -254,4 +344,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, redis };
+export { server, redis, pgPool, memRepo };

@@ -13,6 +13,8 @@ export interface AgentExecutionInput {
   initialMessages?: Message[];
   tools?: ToolDefinition[];
   maxIterations?: number;
+  /** Maximum total cost in USD before execution is aborted. 0 = unlimited. */
+  costBudgetUsd?: number;
   requiresApproval?: boolean;
 }
 

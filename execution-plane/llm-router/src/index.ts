@@ -212,7 +212,7 @@ async function callOpenAIWithFallback(
             messages: openaiMessages,
             tools: openaiTools?.length ? openaiTools : undefined,
             temperature,
-            max_tokens: Math.min((maxTokens || 512), 512),
+            max_tokens: Math.min((maxTokens || 4096), 16384),
           },
           { signal }
         );

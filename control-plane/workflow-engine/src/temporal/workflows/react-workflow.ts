@@ -391,6 +391,28 @@ export async function reactWorkflow(
       );
       totalCost += costValue;
 
+      // Enforce cost budget
+      const costBudget = input.costBudgetUsd ?? 0;
+      if (costBudget > 0 && totalCost > costBudget) {
+        lastAction = "cost_budget_exceeded";
+        await recordObservability({
+          executionId: input.executionId,
+          step: `react_cost_budget_exceeded_${currentIteration}`,
+          status: "failed",
+          attributes: { totalCost: `$${totalCost.toFixed(6)}`, budget: `$${costBudget.toFixed(6)}` },
+        });
+
+        result = {
+          status: "ERROR",
+          output: `Cost budget exceeded: $${totalCost.toFixed(6)} > $${costBudget.toFixed(6)}`,
+          totalCost: `$${totalCost.toFixed(6)}`,
+          iterations: currentIteration,
+          toolCalls,
+          error: `Cost budget exceeded: $${totalCost.toFixed(6)} > $${costBudget.toFixed(6)}`,
+        };
+        break;
+      }
+
       // Add assistant response to messages
       // If the LLM returned structured tool_calls, attach them for conversation continuity
       const assistantMsg: Message & { toolCalls?: Array<{ id: string; name: string; args: string }> } = {

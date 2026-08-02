@@ -334,20 +334,70 @@ fastify.get("/api/agents/:id", async (request, reply) => {
 
 // ── Agent Executions ──
 
-fastify.get("/api/agents/:id/executions", async (request) => {
+fastify.get("/api/agents/:id/executions", async (request, reply) => {
   const { id } = request.params as { id: string };
   const q = request.query as Record<string, string>;
   const page = parseInt(q.page ?? "1", 10);
   const limit = parseInt(q.limit ?? "20", 10);
+  const namespace = q.namespace ?? "default";
 
-  // Query from traces endpoint filtered by agent
-  const executions = [
-    { id: "exec-001", agentId: id, agentName: "agent", namespace: "default", status: "succeeded", startTime: new Date(Date.now() - 300000).toISOString(), endTime: new Date(Date.now() - 240000).toISOString(), durationMs: 60000, costUsd: 0.0042, traceId: "tr-001" },
-    { id: "exec-002", agentId: id, agentName: "agent", namespace: "default", status: "running", startTime: new Date(Date.now() - 60000).toISOString(), traceId: "tr-002" },
-    { id: "exec-003", agentId: id, agentName: "agent", namespace: "default", status: "failed", startTime: new Date(Date.now() - 600000).toISOString(), endTime: new Date(Date.now() - 580000).toISOString(), durationMs: 20000, costUsd: 0.0012, traceId: "tr-003" },
-  ];
+  try {
+    const client = await getTemporalClient();
 
-  return apiResponse(paginate(executions, page, limit));
+    // List Temporal workflows matching this agent ID
+    const iterator = client.workflow.list({
+      query: `WorkflowId LIKE 'agent-exec-%' AND WorkflowType = 'reactWorkflow'`,
+      pageSize: limit,
+    });
+
+    const executions: Array<Record<string, unknown>> = [];
+
+    for await (const workflow of iterator) {
+      // Extract agent ID from workflow args (first arg contains agentId)
+      const raw = workflow.raw as Record<string, unknown> | undefined;
+      const args = (raw?.executionInfo as any)?.type?.name === "reactWorkflow"
+        ? (raw as any)?.memo?.payloads
+        : undefined;
+
+      // Filter by agent ID — check if this workflow's ID contains the agent name
+      if (!workflow.workflowId.includes(id)) continue;
+
+      const startTime = workflow.startTime instanceof Date
+        ? workflow.startTime.toISOString()
+        : new Date().toISOString();
+      const endTime = workflow.closeTime instanceof Date
+        ? workflow.closeTime.toISOString()
+        : undefined;
+      const durationMs = workflow.closeTime instanceof Date && workflow.startTime instanceof Date
+        ? workflow.closeTime.getTime() - workflow.startTime.getTime()
+        : undefined;
+
+      executions.push({
+        id: workflow.workflowId,
+        agentId: id,
+        agentName: id,
+        namespace,
+        status: workflow.status.name === "Completed" ? "succeeded"
+          : workflow.status.name === "Running" ? "running"
+          : workflow.status.name === "Failed" ? "failed"
+          : workflow.status.name === "Terminated" ? "cancelled"
+          : workflow.status.name === "TimedOut" ? "timeout"
+          : workflow.status.name?.toLowerCase() ?? "unknown",
+        startTime,
+        endTime,
+        durationMs,
+        costUsd: 0, // Cost tracked in observability plane
+        traceId: workflow.workflowId,
+        runId: workflow.runtimeStatus ?? undefined,
+      });
+    }
+
+    return apiResponse(paginate(executions, page, limit));
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: errMsg, agentId: id }, "Failed to query executions from Temporal, returning empty");
+    return apiResponse(paginate([], page, limit));
+  }
 });
 
 // ── Run Agent (trigger workflow) ──
