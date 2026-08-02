@@ -201,6 +201,7 @@ workflow-engine:
   healthPort: 15058
   temporalNamespace: default
   taskQueue: egaop-agent-queue
+  sandboxIsolationLevel: "Enhanced"
   tls:
     certManager:
       enabled: false
@@ -213,6 +214,10 @@ llm-router:
   grpcPort: 50053
   healthPort: 15053
   rateLimitRpm: 30
+  # Multi-model provider support
+  anthropicApiKey: ""
+  anthropicBaseUrl: "https://api.anthropic.com"
+  ollamaBaseUrl: "http://localhost:11434"
   tls:
     certManager:
       enabled: false

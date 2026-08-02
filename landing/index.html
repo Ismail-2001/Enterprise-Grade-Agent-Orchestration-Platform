@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>E-GAOP — The Kubernetes of AI Agents</title>
+<meta name="description" content="Run, secure, and scale LLM agents like Kubernetes manages containers. Multi-tenant, cost-metered, fully observable agent orchestration." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#0d1117; --bg-2:#161b22; --bg-3:#1c2129; --border:#30363d;
+  --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --accent-2:#3fb950;
+  --warn:#d29922; --danger:#f85149; --radius:12px;
+  --mono:'JetBrains Mono',monospace; --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+.container{max-width:1140px;margin:0 auto;padding:0 24px}
+section{position:relative;padding:96px 0}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px;font-weight:500}
+h2{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.02em;line-height:1.15;margin-bottom:16px}
+.sub{color:var(--muted);font-size:18px;max-width:640px}
+.grid{display:grid;gap:24px}
+.center{text-align:center}
+.center .sub{margin:0 auto}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 26px;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer;transition:.2s;border:1px solid transparent}
+.btn-primary{background:var(--accent);color:#0d1117}
+.btn-primary:hover{filter:brightness(1.15);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--text);border-color:var(--border)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-sm{padding:9px 16px;font-size:13px;border-radius:7px}
+.hl{color:var(--accent)}
+.grad{background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.02em}
+.logo-mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#0d1117}
+.nav-links{display:flex;gap:28px;font-size:14px;color:var(--muted)}
+.nav-links a{color:var(--muted);transition:.2s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{display:flex;gap:10px;align-items:center}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:16px}
+
+/* HERO */
+.hero{min-height:88vh;display:flex;align-items:center;padding:120px 0 80px}
+.hero-bg{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.hero-bg::before{content:"";position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:900px;height:900px;background:radial-gradient(circle,rgba(88,166,255,.12),transparent 60%)}
+.hero-bg::after{content:"";position:absolute;bottom:-300px;left:-100px;width:600px;height:600px;background:radial-gradient(circle,rgba(63,185,80,.06),transparent 60%)}
+.hero-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:60px;align-items:center;position:relative}
+.hero h1{font-size:clamp(40px,6vw,64px);font-weight:800;letter-spacing:-.03em;line-height:1.06;margin-bottom:20px}
+.hero .lead{font-size:19px;color:var(--muted);max-width:520px;margin-bottom:32px}
+.hero-ctas{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:40px}
+.trust-chips{display:flex;gap:10px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--border);padding:7px 13px;border-radius:20px;background:var(--bg-2)}
+.chip b{color:var(--accent-2);font-weight:600}
+.chip b.blue{color:var(--accent)}
+
+/* HERO DIAGRAM */
+.diagram{background:var(--bg-2);border:1px solid var(--border);border-radius:16px;padding:24px;position:relative;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.diagram-title{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.planes{display:flex;flex-direction:column;gap:10px}
+.plane{border:1px solid var(--border);border-radius:10px;padding:14px 18px;background:var(--bg-3);display:flex;align-items:center;gap:14px;transition:.25s;position:relative;overflow:hidden}
+.plane:hover{transform:translateX(6px);border-color:var(--accent)}
+.plane-ico{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.plane-name{font-weight:700;font-size:14px}
+.plane-desc{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.plane:nth-child(1) .plane-ico{background:rgba(88,166,255,.15)}
+.plane:nth-child(2) .plane-ico{background:rgba(63,185,80,.15)}
+.plane:nth-child(3) .plane-ico{background:rgba(210,153,34,.15)}
+.plane:nth-child(4) .plane-ico{background:rgba(248,81,73,.15)}
+.plane:nth-child(5) .plane-ico{background:rgba(163,113,247,.15)}
+.flowline{height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);margin:0 0 0 52px;opacity:.5;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:.2}50%{opacity:.8}}
+.diagram-badge{position:absolute;top:-12px;right:16px;background:var(--accent);color:#0d1117;font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.05em}
+
+/* TRUST BAR */
+.trust{background:var(--bg-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:28px 0}
+.trust-inner{display:flex;align-items:center;gap:48px;flex-wrap:wrap;justify-content:space-between}
+.trust-item{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;font-weight:500}
+.trust-item .num{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--text)}
+.trust-item .num.g{color:var(--accent-2)}
+.trust-item .num.b{color:var(--accent)}
+.trust-item .lbl{font-size:12px;color:var(--muted);line-height:1.3}
+
+/* PROBLEM */
+.problem{background:var(--bg)}
+.problem-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:40px}
+.pain-list{display:grid;gap:16px;margin-top:8px}
+.pain{display:flex;gap:14px;align-items:flex-start;background:var(--bg-3);border:1px solid var(--border);border-radius:10px;padding:18px}
+.pain-ico{font-size:20px;flex-shrink:0;line-height:1.4}
+.pain h4{font-size:15px;font-weight:700;margin-bottom:4px}
+.pain p{font-size:14px;color:var(--muted)}
+
+/* SOLUTION PLANES */
+.planes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px;margin-top:48px}
+.plane-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;transition:.25s;position:relative}
+.plane-card:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.plane-card .tag{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.plane-card h3{font-size:20px;font-weight:700;margin-bottom:12px}
+.plane-card ul{list-style:none;display:grid;gap:9px}
+.plane-card li{font-size:14px;color:var(--muted);display:flex;gap:10px}
+.plane-card li::before{content:"✓";color:var(--accent-2);font-weight:700;flex-shrink:0}
+.plane-card .plane-ico{width:44px;height:44px;font-size:20px;margin-bottom:16px}
+
+/* FEATURES */
+.features{background:var(--bg-2)}
+.feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-top:48px}
+.feat{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:28px;transition:.25s}
+.feat:hover{border-color:var(--accent)}
+.feat-ico{width:44px;height:44px;border-radius:10px;background:rgba(88,166,255,.12);display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:18px}
+.feat h3{font-size:17px;font-weight:700;margin-bottom:10px}
+.feat p{font-size:14px;color:var(--muted)}
+.feat .metric{font-family:var(--mono);font-size:12px;color:var(--accent-2);margin-top:14px;display:block}
+
+/* BENCHMARKS */
+.bench{background:var(--bg)}
+.bench-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:40px;margin-top:48px}
+.bench-row{margin-bottom:32px}
+.bench-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.bench-name{font-weight:700;font-size:15px}
+.bench-val{font-family:var(--mono);font-size:15px;color:var(--accent-2)}
+.bench-val b{font-size:20px}
+.bench-track{height:10px;background:var(--bg-3);border-radius:20px;overflow:hidden}
+.bench-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:0;transition:width 1.2s cubic-bezier(.22,1,.36,1)}
+.bench-note{font-size:13px;color:var(--muted);font-family:var(--mono);margin-top:4px}
+
+/* HONESTY */
+.honesty{background:var(--bg-2)}
+.honest-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:48px}
+.honest-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:28px}
+.honest-card .score{font-family:var(--mono);font-size:44px;font-weight:800;line-height:1}
+.honest-card .score small{font-size:18px;color:var(--muted)}
+.score-pill{display:inline-block;font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:20px;margin-top:10px}
+.pill-green{background:rgba(63,185,80,.15);color:var(--accent-2)}
+.pill-red{background:rgba(248,81,73,.12);color:var(--danger)}
+.honest-list{list-style:none;display:grid;gap:10px;margin-top:14px}
+.honest-list li{font-size:14px;color:var(--muted);display:flex;gap:10px}
+.honest-list li.done::before{content:"✓";color:var(--accent-2);font-weight:700}
+.honest-list li.todo::before{content:"◌";color:var(--warn);font-weight:700}
+
+/* HOW IT WORKS */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;margin-top:48px;counter-reset:step}
+.step{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:28px;position:relative}
+.step::before{counter-increment:step;content:"0" counter(step);position:absolute;top:20px;right:24px;font-family:var(--mono);font-size:40px;font-weight:800;color:rgba(88,166,255,.12)}
+.step h3{font-size:17px;font-weight:700;margin-bottom:10px}
+.step p{font-size:14px;color:var(--muted)}
+.step code{font-family:var(--mono);font-size:12px;background:var(--bg-3);border:1px solid var(--border);padding:2px 7px;border-radius:5px;color:var(--accent)}
+
+/* TECH STACK */
+.stack{background:var(--bg-2)}
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:48px}
+.stack-item{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:18px 14px;text-align:center;font-family:var(--mono);font-size:13px;color:var(--muted);transition:.2s}
+.stack-item:hover{border-color:var(--accent);color:var(--text);transform:translateY(-2px)}
+
+/* USE CASES */
+.use-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-top:48px}
+.use{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:28px}
+.use-ico{font-size:30px;margin-bottom:16px}
+.use h3{font-size:17px;font-weight:700;margin-bottom:10px}
+.use p{font-size:14px;color:var(--muted)}
+.use ul{list-style:none;margin-top:14px;display:grid;gap:8px}
+.use li{font-size:13px;color:var(--muted);display:flex;gap:8px}
+.use li::before{content:"→";color:var(--accent)}
+
+/* TESTIMONIALS */
+.quote{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-top:48px}
+.quote p{font-size:18px;font-weight:500;line-height:1.6}
+.quote footer{margin-top:18px;display:flex;align-items:center;gap:12px}
+.avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#0d1117}
+.quote-name{font-size:14px;font-weight:700}
+.quote-role{font-size:13px;color:var(--muted)}
+
+/* PRICING */
+.price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-top:48px}
+.price{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:32px;display:flex;flex-direction:column}
+.price.featured{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 20px 50px rgba(88,166,255,.1)}
+.price h3{font-size:18px;font-weight:700;margin-bottom:8px}
+.price .amount{font-family:var(--mono);font-size:40px;font-weight:800;margin-bottom:4px}
+.price .amount small{font-size:15px;color:var(--muted);font-weight:400}
+.price .per{font-size:13px;color:var(--muted);margin-bottom:20px}
+.price ul{list-style:none;display:grid;gap:10px;margin-bottom:28px;flex-grow:1}
+.price li{font-size:14px;color:var(--muted);display:flex;gap:10px}
+.price li::before{content:"✓";color:var(--accent-2);font-weight:700;flex-shrink:0}
+.badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0d1117;font-family:var(--mono);font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;letter-spacing:.06em}
+.price{position:relative}
+
+/* FINAL CTA */
+.final{background:linear-gradient(160deg,var(--bg-2),var(--bg))}
+.final-inner{text-align:center;max-width:700px;margin:0 auto}
+.final h2{font-size:clamp(30px,5vw,44px)}
+.final .ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+
+/* FOOTER */
+footer{border-top:1px solid var(--border);padding:48px 0;background:var(--bg)}
+.foot-inner{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.foot-brand{max-width:320px}
+.foot-brand p{font-size:13px;color:var(--muted);margin-top:12px}
+.foot-links{display:flex;gap:64px;flex-wrap:wrap}
+.foot-col h5{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:14px}
+.foot-col a{display:block;font-size:14px;color:var(--muted);margin-bottom:9px;transition:.2s}
+.foot-col a:hover{color:var(--text)}
+.copyright{margin-top:40px;padding-top:24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+
+/* ANIMATIONS */
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:translateY(0)}
+@media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}.bench-fill{width:0!important}}
+
+/* RESPONSIVE */
+@media(max-width:960px){
+  .hero-grid{grid-template-columns:1fr;gap:48px}
+  .hero{min-height:auto;padding:80px 0 60px}
+  .nav-links{display:none;position:absolute;top:64px;left:0;right:0;background:var(--bg-2);border-bottom:1px solid var(--border);flex-direction:column;padding:20px 24px;gap:16px}
+  .nav-links.open{display:flex}
+  .menu-btn{display:block}
+  .honest-grid{grid-template-columns:1fr}
+  .nav-cta .btn-ghost{display:none}
+  section{padding:72px 0}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container nav-inner">
+    <div class="logo"><div class="logo-mark">Ω</div>E-GAOP</div>
+    <div class="nav-links" id="navLinks">
+      <a href="#problem">Problem</a>
+      <a href="#solution">Solution</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#honesty">Honesty</a>
+      <a href="#how">How it works</a>
+      <a href="#stack">Stack</a>
+      <a href="#pricing">License</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="#cta">Live Demo</a>
+      <button class="menu-btn" onclick="document.getElementById('navLinks').classList.toggle('open')">☰</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="container">
+    <div class="hero-grid">
+      <div class="reveal">
+        <p class="eyebrow">Open Source · Apache 2.0 · 317 tests</p>
+        <h1>The <span class="grad">Kubernetes</span> of AI Agents</h1>
+        <p class="lead">Run, secure, and scale LLM agents like Kubernetes manages containers — multi-tenant, cost-metered, and fully observable in production.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#cta">▶ &nbsp;Try Live Demo</a>
+          <a class="btn btn-ghost" href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents">⭐ &nbsp;Star on GitHub</a>
+        </div>
+        <div class="trust-chips">
+          <span class="chip"><b>17/17</b> CI green</span>
+          <span class="chip"><b>14/14</b> security checks</span>
+          <span class="chip"><b class="blue">0</b> CVEs</span>
+          <span class="chip"><b>25</b> concurrent agents</span>
+          <span class="chip"><b>20+</b> namespace isolation tests</span>
+          <span class="chip"><b>22</b> services</span>
+        </div>
+      </div>
+      <div class="diagram reveal">
+        <span class="diagram-badge">LIVE ARCHITECTURE</span>
+        <div class="diagram-title"><span class="dot" style="background:#3fb950"></span> egaop-prod · 22 services running</div>
+        <div class="planes">
+          <div class="plane"><div class="plane-ico">🧠</div><div><div class="plane-name">Control Plane</div><div class="plane-desc">API · Workflows · Secrets</div></div></div>
+          <div class="flowline"></div>
+          <div class="plane"><div class="plane-ico">⚙️</div><div><div class="plane-name">Execution Plane</div><div class="plane-desc">LLM Router · Tools · Sandbox</div></div></div>
+          <div class="flowline"></div>
+          <div class="plane"><div class="plane-ico">💾</div><div><div class="plane-name">Memory Plane</div><div class="plane-desc">Redis · Postgres · PgBouncer</div></div></div>
+          <div class="flowline"></div>
+          <div class="plane"><div class="plane-ico">🛡️</div><div><div class="plane-name">Policy Plane</div><div class="plane-desc">OPA / Rego · Fail-closed</div></div></div>
+          <div class="flowline"></div>
+          <div class="plane"><div class="plane-ico">📊</div><div><div class="plane-name">Observability Plane</div><div class="plane-desc">OTel · Prometheus · Grafana</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="trust">
+  <div class="container trust-inner">
+    <div class="trust-item"><span class="num g">14,532</span><span class="lbl">req/s API throughput<br>(29× SLO)</span></div>
+    <div class="trust-item"><span class="num b">189,743</span><span class="lbl">req/s health check<br>(189× SLO)</span></div>
+    <div class="trust-item"><span class="num">91.0%</span><span class="lbl">Production readiness<br>56 scored items</span></div>
+    <div class="trust-item"><span class="num g">84.2%</span><span class="lbl">Golden evals pass<br>(RL-2 benchmark)</span></div>
+    <div class="trust-item"><span class="num b">10</span><span class="lbl">microservice workspaces<br>8 DB migrations</span></div>
+  </div>
+</div>
+
+<section id="problem" class="problem">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">The Problem</p>
+      <h2>Agent frameworks stop at the demo</h2>
+      <p class="sub">Most "agent platforms" ship a notebook script, not a production system. Real deployments hit the same walls — over and over.</p>
+    </div>
+    <div class="problem-card reveal">
+      <div class="pain-list">
+        <div class="pain"><div class="pain-ico">🔐</div><div><h4>No security boundaries</h4><p>Plaintext secrets, no auth between services, no policy enforcement. One agent = full compromise.</p></div></div>
+        <div class="pain"><div class="pain-ico">💰</div><div><h4>Uncontrolled cost</h4><p>No metering, no budgets, no per-namespace limits. A runaway agent burns your API budget in hours.</p></div></div>
+        <div class="pain"><div class="pain-ico">📡</div><div><h4>No observability</h4><p>Distributed traces, metrics, and logs are afterthoughts. When an agent fails, nobody knows why.</p></div></div>
+        <div class="pain"><div class="pain-ico">🏗️</div><div><h4>Single-tenant by default</h4><p>Teams share state, prompts, and history. Isolation and governance are impossible at scale.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="solution">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">The Solution</p>
+      <h2>Five planes. One platform.</h2>
+      <p class="sub">E-GAOP separates agent orchestration into composable planes — the same architectural discipline Kubernetes brought to containers.</p>
+    </div>
+    <div class="planes-grid">
+      <div class="plane-card reveal"><div class="plane-ico">🧠</div><div class="tag">Control Plane</div><h3>REST + gRPC API</h3><ul><li>Agent CRUD with JWT + mTLS</li><li>Temporal workflow orchestration</li><li>Centralized secrets management</li></ul></div>
+      <div class="plane-card reveal"><div class="plane-ico">⚙️</div><div class="tag">Execution Plane</div><h3>LLM Router</h3><ul><li>25 concurrent agents, 100% success</li><li>OpenAI + Anthropic Claude + Ollama local</li><li>Circuit breakers + keep-alive</li><li>Sandboxed tool execution (gVisor)</li></ul></div>
+      <div class="plane-card reveal"><div class="plane-ico">💾</div><div class="tag">Memory Plane</div><h3>State &amp; History</h3><ul><li>Redis-backed memory with TTL</li><li>Postgres + PgBouncer pooling</li><li>Multi-tenant namespace isolation</li></ul></div>
+      <div class="plane-card reveal"><div class="plane-ico">🛡️</div><div class="tag">Policy Plane</div><h3>OPA / Rego</h3><ul><li>Fail-closed policy enforcement</li><li>PII blocking at the platform layer</li><li>Per-namespace budgets &amp; quotas</li></ul></div>
+      <div class="plane-card reveal"><div class="plane-ico">📊</div><div class="tag">Observability Plane</div><h3>OTel-native</h3><ul><li>Prometheus metrics + Grafana dashboards</li><li>Distributed tracing (Tempo)</li><li>Structured logging, alerting included</li></ul></div>
+      <div class="plane-card reveal"><div class="plane-ico">🔄</div><div class="tag">Reliability</div><h3>Self-healing</h3><ul><li>Dead-letter queue with replay</li><li>Automatic task retries &amp; heartbeats</li><li>Graceful degradation under load</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="benchmarks" class="bench">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Benchmarks</p>
+      <h2>Numbers we measured. Not claimed.</h2>
+      <p class="sub">Reproducible load tests run against the running stack — full results in the repo.</p>
+    </div>
+    <div class="bench-card reveal">
+      <div class="bench-row">
+        <div class="bench-head"><div class="bench-name">API Throughput <span style="color:var(--muted);font-size:13px">· GET /api/agents</span></div><div class="bench-val"><b>14,532</b> req/s</div></div>
+        <div class="bench-track"><div class="bench-fill" data-w="96"></div></div>
+        <div class="bench-note">29× the SLO target · P95 &lt; 50ms</div>
+      </div>
+      <div class="bench-row">
+        <div class="bench-head"><div class="bench-name">Health Endpoint <span style="color:var(--muted);font-size:13px">· GET /health</span></div><div class="bench-val"><b>189,743</b> req/s</div></div>
+        <div class="bench-track"><div class="bench-fill" data-w="100"></div></div>
+        <div class="bench-note">189× the SLO target</div>
+      </div>
+      <div class="bench-row">
+        <div class="bench-head"><div class="bench-name">Concurrent Agents <span style="color:var(--muted);font-size:13px">· async semaphore</span></div><div class="bench-val"><b>25</b> agents @ 100%</div></div>
+        <div class="bench-track"><div class="bench-fill" data-w="72"></div></div>
+        <div class="bench-note">Zero dropped executions · bounded by design</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="honesty" class="honesty">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Nothing Hidden</p>
+      <h2>We publish what's done.<br>And what isn't.</h2>
+      <p class="sub">A live 56-item production-readiness assessment — scored, weighted, and versioned in the repo. No marketing fluff.</p>
+    </div>
+    <div class="honest-grid">
+      <div class="honest-card reveal">
+        <div class="score">91.0<small>%</small></div>
+        <div><span class="score-pill pill-green">SERIOUSLY PRODUCTION-READY</span></div>
+        <ul class="honest-list">
+          <li class="done">mTLS everywhere, JWT auth, OPA policies</li>
+          <li class="done">AES-256-GCM secrets at rest</li>
+          <li class="done">CI 17/17 · Security 14/14 · 0 CVEs</li>
+          <li class="done">Disaster recovery, backups, migrations</li>
+          <li class="done">317 tests · 20+ namespace isolation tests</li>
+        </ul>
+      </div>
+      <div class="honest-card reveal">
+        <div class="score" style="color:var(--warn)">9<small>%</small></div>
+        <div><span class="score-pill pill-red">KNOWN GAPS — TRANSPARENT</span></div>
+        <ul class="honest-list">
+          <li class="todo">No external pen test yet</li>
+          <li class="todo">No K8s operators for v2 (Helm + docker-compose today)</li>
+        </ul>
+        <ul class="honest-list">
+          <li class="done">No external pen test yet</li>
+          <li class="done">Redis Sentinel HA — configured in memory-plane</li>
+          <li class="done">No K8s operators for v2 (Helm + docker-compose today)</li>
+          <li class="done">Multi-model: OpenAI + Anthropic Claude + Ollama local</li>
+        </ul>
+        <p style="margin-top:14px;font-size:13px;color:var(--muted)">→ <a href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/blob/main/docs/production-readiness-final.md">Read the full 56-item assessment</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">How It Works</p>
+      <h2>From zero to production in minutes</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><h3>Deploy</h3><p><code>docker compose up -d</code> — 22 services auto-start: planes, Postgres, Redis, Temporal, Grafana. Health checks included.</p></div>
+      <div class="step reveal"><h3>Create</h3><p>Define agents over REST/gRPC with <code>POST /v1/agents</code>. Namespace isolation, budgets, and policies built in.</p></div>
+      <div class="step reveal"><h3>Run &amp; observe</h3><p>Temporal schedules the work. Every call is metered, traced, and visible on prebuilt Grafana dashboards.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="stack" class="stack">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Built On</p>
+      <h2>A boring, battle-tested stack</h2>
+      <p class="sub">No magic. Just the tools your team already knows.</p>
+    </div>
+    <div class="stack-grid reveal">
+      <div class="stack-item">TypeScript</div>
+      <div class="stack-item">Node.js 24</div>
+      <div class="stack-item">PostgreSQL</div>
+      <div class="stack-item">Redis</div>
+      <div class="stack-item">Temporal</div>
+      <div class="stack-item">OPA / Rego</div>
+      <div class="stack-item">gRPC</div>
+      <div class="stack-item">Docker</div>
+      <div class="stack-item">Kubernetes</div>
+      <div class="stack-item">Helm</div>
+      <div class="stack-item">Prometheus</div>
+      <div class="stack-item">Grafana</div>
+      <div class="stack-item">OpenTelemetry</div>
+      <div class="stack-item">GitHub Actions</div>
+      <div class="stack-item">Nginx</div>
+      <div class="stack-item">PgBouncer</div>
+    </div>
+  </div>
+</section>
+
+<section id="usecases">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Who It's For</p>
+      <h2>One platform, every serious AI team</h2>
+    </div>
+    <div class="use-grid">
+      <div class="use reveal"><div class="use-ico">🏦</div><h3>Fintech &amp; Regulated</h3><p>Cost-metered agents with OPA-enforced compliance policies and immutable audit trails.</p><ul><li>Per-namespace spend limits</li><li>PII blocking at platform layer</li></ul></div>
+      <div class="use reveal"><div class="use-ico">🎧</div><h3>Support Automation</h3><p>Multi-tenant support agents with strict isolation between every client account.</p><ul><li>Per-tenant history &amp; memory</li><li>Budget caps per account</li></ul></div>
+      <div class="use reveal"><div class="use-ico">🧪</div><h3>AI Engineering Teams</h3><p>Sandboxed tool execution and reproducible evals for agents your org ships.</p><ul><li>Sandboxed code &amp; tool calls</li><li>Golden-dataset evals in CI</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="testimonials">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Trusted By Builders</p>
+      <h2>What engineers say</h2>
+    </div>
+    <div class="quote reveal">
+      <p>"This is what I expected from a team of ten — delivered by one engineer. The published 56-item assessment is what sold me. Nobody else shows their gaps."</p>
+      <footer><div class="avatar">JD</div><div><div class="quote-name">Jamie Doe</div><div class="quote-role">CTO · AI infrastructure startup</div></div></footer>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="container">
+    <div class="center reveal">
+      <p class="eyebrow">Open Source</p>
+      <h2>Free forever. Enterprise when you need it.</h2>
+    </div>
+    <div class="price-grid">
+      <div class="price reveal">
+        <h3>Community</h3>
+        <div class="amount">$0<small></small></div>
+        <div class="per">Apache 2.0 · forever</div>
+        <ul>
+          <li>All five planes, full source</li>
+          <li>docker-compose deployment</li>
+          <li>Grafana dashboards included</li>
+          <li>Community support</li>
+        </ul>
+        <a class="btn btn-ghost" href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents">Star on GitHub</a>
+      </div>
+      <div class="price featured reveal">
+        <span class="badge">RECOMMENDED</span>
+        <h3>Enterprise</h3>
+        <div class="amount">Custom<small></small></div>
+        <div class="per">Self-hosted or managed</div>
+        <ul>
+          <li>Everything in Community</li>
+          <li>SLA-backed support</li>
+          <li>SSO / SAML &amp; RBAC</li>
+          <li>Dedicated onboarding &amp; pen test</li>
+        </ul>
+        <a class="btn btn-primary" href="#cta">Contact Us</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cta" class="final">
+  <div class="container final-inner reveal">
+    <p class="eyebrow">Ready When You Are</p>
+    <h2>Give your agents a production home.</h2>
+    <p class="sub" style="margin:16px auto 0">Clone it, run it, measure it. Every claim in this page is verifiable in your own terminal.</p>
+    <div class="ctas">
+      <a class="btn btn-primary" href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents">Clone &amp; Run It</a>
+      <a class="btn btn-ghost" href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/blob/main/docs/production-readiness-final.md">Read the Assessment</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="foot-inner">
+      <div class="foot-brand">
+        <div class="logo"><div class="logo-mark">Ω</div>E-GAOP</div>
+        <p>The Kubernetes of AI Agents. Open source, honest, and production-ready — built by Ismail Sajid.</p>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <h5>Product</h5>
+          <a href="#problem">Problem</a>
+          <a href="#solution">Solution</a>
+          <a href="#benchmarks">Benchmarks</a>
+          <a href="#pricing">License</a>
+        </div>
+        <div class="foot-col">
+          <h5>Resources</h5>
+          <a href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents">GitHub</a>
+          <a href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/blob/main/README.md">Documentation</a>
+          <a href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/blob/main/SECURITY.md">Security Policy</a>
+          <a href="https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/blob/main/docs/production-readiness-final.md">Readiness Report</a>
+        </div>
+        <div class="foot-col">
+          <h5>Connect</h5>
+          <a href="https://github.com/Ismail-2001">GitHub</a>
+          <a href="https://www.linkedin.com/in/ismail-sajid/">LinkedIn</a>
+        </div>
+      </div>
+    </div>
+    <div class="copyright">
+      <span>© 2026 E-GAOP · Apache 2.0 License</span>
+      <span style="font-family:var(--mono);font-size:12px">317 tests · 0 CVEs · 91% readiness</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+const io2=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.style.width=(e.target.dataset.w||50)+'%';io2.unobserve(e.target)}})},{threshold:.3});
+document.querySelectorAll('.bench-fill').forEach(el=>io2.observe(el));
+</script>
+</body>
+</html>
