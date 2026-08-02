@@ -55,6 +55,12 @@ workflow-engine:
 llm-router:
   replicas: 2
   rateLimitRpm: 60
+  anthropicBaseUrl: "https://api.anthropic.com"
+  ollamaBaseUrl: "http://localhost:11434"
+
+workflow-engine:
+  replicas: 2
+  sandboxIsolationLevel: "Enhanced"
 
 tool-proxy:
   replicas: 2

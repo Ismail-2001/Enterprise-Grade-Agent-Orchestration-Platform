@@ -4,6 +4,7 @@ tag: latest
 replicas: 2
 grpcPort: 50052
 healthPort: 15052
+rateLimitRpm: 60
 resources:
   requests:
     cpu: 200m

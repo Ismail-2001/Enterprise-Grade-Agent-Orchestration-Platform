@@ -7,7 +7,11 @@ metadata:
 data:
   LLM_ROUTER_PORT: "{{ .Values.grpcPort }}"
   LLM_ROUTER_HEALTH_PORT: "{{ .Values.healthPort }}"
-  LLM_FALLBACK_CHAIN: "openai,anthropic,local"
-  LLM_TIMEOUT_MS: "30000"
-  LLM_MAX_RETRIES: "3"
+  LLM_FALLBACK_CHAIN: {{ .Values.fallbackChain | default "gpt-4o,gpt-4o-mini,gpt-3.5-turbo" | quote }}
+  LLM_TIMEOUT_MS: {{ .Values.llmTimeoutMs | default "30000" | quote }}
+  LLM_MAX_RETRIES: {{ .Values.llmMaxRetries | default "3" | quote }}
+  LLM_MAX_CONCURRENT: {{ .Values.llmMaxConcurrent | default "25" | quote }}
+  RATE_LIMIT_RPM: {{ .Values.rateLimitRpm | default "30" | quote }}
+  ANTHROPIC_BASE_URL: {{ .Values.anthropicBaseUrl | default "https://api.anthropic.com" | quote }}
+  OLLAMA_BASE_URL: {{ .Values.ollamaBaseUrl | default "http://localhost:11434" | quote }}
 {{- end }}

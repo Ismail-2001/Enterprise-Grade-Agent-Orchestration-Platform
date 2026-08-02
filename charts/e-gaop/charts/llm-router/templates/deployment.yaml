@@ -47,6 +47,18 @@ spec:
               value: "{{ .Values.grpcPort }}"
             - name: SERVICE_HEALTH_PORT
               value: "{{ .Values.healthPort }}"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-llm-secrets
+                  key: anthropic-api-key
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-llm-secrets
+                  key: openai-api-key
+                  optional: true
           livenessProbe:
             httpGet:
               path: /healthz

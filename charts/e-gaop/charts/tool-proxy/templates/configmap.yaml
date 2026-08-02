@@ -7,4 +7,5 @@ metadata:
 data:
   TOOL_PROXY_PORT: "{{ .Values.grpcPort }}"
   TOOL_PROXY_HEALTH_PORT: "{{ .Values.healthPort }}"
+  RATE_LIMIT_RPM: "{{ .Values.rateLimitRpm | default 60 }}"
 {{- end }}

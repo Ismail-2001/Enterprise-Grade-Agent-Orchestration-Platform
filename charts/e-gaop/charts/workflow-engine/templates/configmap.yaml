@@ -6,5 +6,6 @@ metadata:
   namespace: {{ .Release.Namespace }}
 data:
   WORKFLOW_ENGINE_HEALTH_PORT: "{{ .Values.healthPort }}"
-  TEMPORAL_TASK_QUEUE: "e-gaop-workflows"
+  TEMPORAL_TASK_QUEUE: {{ .Values.taskQueue | default "egaop-agent-queue" | quote }}
+  SANDBOX_ISOLATION_LEVEL: {{ .Values.sandboxIsolationLevel | default "Enhanced" | quote }}
 {{- end }}

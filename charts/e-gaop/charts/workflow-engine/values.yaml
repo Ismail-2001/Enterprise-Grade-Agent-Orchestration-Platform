@@ -3,6 +3,8 @@ image: egaop/workflow-engine
 tag: latest
 replicas: 2
 healthPort: 15058
+taskQueue: egaop-agent-queue
+sandboxIsolationLevel: "Enhanced"
 resources:
   requests:
     cpu: 200m
