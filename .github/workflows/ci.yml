@@ -126,14 +126,31 @@ jobs:
         run: helm dependency update charts/e-gaop --skip-refresh || echo "Using pre-packaged chart dependencies"
       - name: Helm lint
         run: helm lint charts/e-gaop --strict
-      - name: Helm template (all values)
+      - name: Helm template (defaults)
         run: helm template test charts/e-gaop --values charts/e-gaop/values.yaml > /dev/null
-      - name: Helm template (CI overrides)
+      - name: Helm template (staging)
         run: |
           helm template test charts/e-gaop \
             --values charts/e-gaop/values.yaml \
-            --set opa.image.tag=0.68.0 \
-            --set global.environment=ci > /dev/null
+            --values charts/e-gaop/values-staging.yaml > /dev/null
+      - name: Helm template (production)
+        run: |
+          helm template test charts/e-gaop \
+            --values charts/e-gaop/values.yaml \
+            --values charts/e-gaop/values-production.yaml > /dev/null
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz -C /usr/local/bin kubeconform
+      - name: Validate manifests with kubeconform
+        run: |
+          helm template test charts/e-gaop \
+            --values charts/e-gaop/values.yaml \
+            --values charts/e-gaop/values-production.yaml \
+            | kubeconform -strict -output json \
+            | jq -r '.validations[] | "\(.status) \(.resource.kind)/\(.resource.name)"' \
+            | head -50
+          echo "Validation complete"
 
   #############################################################################
   # TESTS
