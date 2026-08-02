@@ -281,3 +281,11 @@ admin-console:
   tls:
     certManager:
       enabled: false
+
+# ─── Database Migration ─────────────────────────────────────────────────────
+# Runs as a pre-install/pre-upgrade Helm hook Job.
+# Uses postgres:16 image with psql to apply all migration SQL files in order.
+migration:
+  enabled: true
+  image: postgres
+  tag: "16"

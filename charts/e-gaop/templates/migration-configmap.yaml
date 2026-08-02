@@ -1,0 +1,19 @@
+{{- if .Values.migration.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-migrations
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "e-gaop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+data:
+  001_memory_plane.sql: {{ .Files.Get "migrations/001_memory_plane.sql" | quote }}
+  002_observability_plane.sql: {{ .Files.Get "migrations/002_observability_plane.sql" | quote }}
+  003_namespaces_and_audit.sql: {{ .Files.Get "migrations/003_namespaces_and_audit.sql" | quote }}
+  004_users_and_auth.sql: {{ .Files.Get "migrations/004_users_and_auth.sql" | quote }}
+  005_secrets.sql: {{ .Files.Get "migrations/005_secrets.sql" | quote }}
+  006_must_change_password.sql: {{ .Files.Get "migrations/006_must_change_password.sql" | quote }}
+  007_dead_letter_queue.sql: {{ .Files.Get "migrations/007_dead_letter_queue.sql" | quote }}
+  008_agent_versions.sql: {{ .Files.Get "migrations/008_agent_versions.sql" | quote }}
+{{- end }}
