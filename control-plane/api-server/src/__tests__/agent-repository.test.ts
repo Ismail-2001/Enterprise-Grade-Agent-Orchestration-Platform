@@ -169,6 +169,20 @@ describe("AgentRepository — PostgreSQL persistence", () => {
 
     await repo.create({ namespace: "update-ns", name: "update-me", spec: { description: "original" }, labels: { env: "dev" } });
 
+    // Mock 1: findByNamespaceAndName (called by update before snapshotting)
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({
+        id: "update-id", namespace: "update-ns", name: "update-me",
+        spec: { description: "original" }, labels: { env: "dev" }, version: 1,
+      })],
+      rowCount: 1,
+    });
+    // Mock 2: createVersionSnapshot INSERT
+    mockPool.query.mockResolvedValueOnce({
+      rows: [{ id: "snap-id" }],
+      rowCount: 1,
+    });
+    // Mock 3: the actual UPDATE RETURNING
     mockPool.query.mockResolvedValueOnce({
       rows: [makeSelectRow({
         id: "update-id", namespace: "update-ns", name: "update-me",
