@@ -216,6 +216,14 @@ if (process.env.NODE_ENV !== "test") {
 
   const shutdown = async () => {
     logger.info("Shutting down Sandbox Runtime...");
+    try {
+      if (sandboxDriver.cleanup) {
+        await sandboxDriver.cleanup();
+        logger.info("Terminated active sandbox containers");
+      }
+    } catch (err) {
+      logger.warn({ err }, "Sandbox container cleanup failed");
+    }
     server.tryShutdown(async () => {
       healthServer.close();
       await shutdownTracing();

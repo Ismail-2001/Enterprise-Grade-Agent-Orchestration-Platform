@@ -103,7 +103,10 @@ export class AgentRepository {
 
     if (options?.labels && typeof options.labels === "object") {
       for (const [k, v] of Object.entries(options.labels)) {
-        whereClause += ` AND labels->>'${k.replace(/'/g, "''")}' = $${paramIndex++}`;
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(k) || k.length > 63) {
+          throw Object.assign(new Error(`Invalid label key: ${k}`), { code: "INVALID_ARGUMENT" });
+        }
+        whereClause += ` AND labels->>'${k}' = $${paramIndex++}`;
         params.push(v);
       }
     }

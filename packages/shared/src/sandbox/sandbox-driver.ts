@@ -10,6 +10,7 @@ export interface SandboxDriver {
   terminateSandbox(sandboxId: string): Promise<boolean>;
   getSandboxStatus(sandboxId: string): Promise<{ status: string; cpu: number; memory: number; startedAt: Date | null }>;
   health(): Promise<boolean>;
+  cleanup?(): Promise<void>;
 }
 
 export interface SandboxSpec {

@@ -274,7 +274,8 @@ fastify.register(swaggerUi, {
 });
 
 // ETag support for conditional GET (304 Not Modified)
-const etagStore = new Map<string, { hash: string; body: string }>();
+// Stores only the content hash — never the response body — bounding memory use.
+const etagStore = new Map<string, string>();
 
 fastify.addHook("onSend", async (request, reply, payload) => {
   if (request.method === "GET" && typeof payload === "string" && reply.statusCode === 200) {
@@ -282,10 +283,10 @@ fastify.addHook("onSend", async (request, reply, payload) => {
     const cacheKey = request.url;
     const previous = etagStore.get(cacheKey);
 
-    if (previous && previous.hash === hash) {
+    if (previous === hash) {
       etagStore.delete(cacheKey);
     } else {
-      etagStore.set(cacheKey, { hash, body: payload });
+      etagStore.set(cacheKey, hash);
       if (etagStore.size > 500) {
         const firstKey = etagStore.keys().next().value;
         if (firstKey) etagStore.delete(firstKey);

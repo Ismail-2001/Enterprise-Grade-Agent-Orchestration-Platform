@@ -3,7 +3,7 @@ import http from "http";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
-import { createNamespaceServerInterceptor, encrypt, decrypt, type EncryptedPayload } from "@e-gaop/shared";
+import { createNamespaceServerInterceptor, encrypt, decrypt, extractNamespace, type EncryptedPayload } from "@e-gaop/shared";
 import { SecretRepository } from "./repository";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
@@ -80,7 +80,10 @@ export async function createServerBundle(config: {
     },
 
     GetSecret: async (call: any, callback: any) => {
-      const { name, namespace } = call.request;
+      const { name, namespace, agent_id } = call.request;
+      if (!agent_id || extractNamespace(agent_id) !== namespace) {
+        return callback({ code: grpc.status.PERMISSION_DENIED, message: "GetSecret requires agent_id scoped to the requested namespace" });
+      }
       try {
         const row = await config.repo.get(namespace, name);
         if (!row) {

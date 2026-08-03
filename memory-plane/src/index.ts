@@ -8,6 +8,7 @@ if (process.env.NODE_ENV !== "test") {
 
 import path from "path";
 import http from "http";
+import crypto from "crypto";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
@@ -15,6 +16,15 @@ import Redis from "ioredis";
 import { Pool } from "pg";
 import { getServerCredentials } from "@e-gaop/shared";
 import { MemoryPlaneRepository } from "./repository";
+
+function verifyServiceToken(req: http.IncomingMessage): boolean {
+  const expectedToken = process.env.INTERNAL_SERVICE_TOKEN ?? "";
+  if (!expectedToken) return true;
+  const provided = (req.headers["x-service-token"] as string) ?? "";
+  const a = Buffer.from(expectedToken);
+  const b = Buffer.from(provided);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
@@ -292,6 +302,11 @@ if (process.env.NODE_ENV !== "test") {
       }
     } else if (req.url === "/api/v1/memory/search" && req.method === "POST") {
       // Vector similarity search endpoint (used by other services internally)
+      if (!verifyServiceToken(req)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
       let body = "";
       req.on("data", (chunk) => { body += chunk; });
       req.on("end", async () => {

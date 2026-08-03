@@ -120,7 +120,7 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-// ─── Circuit Breaker ───────────────────────────────────────────────────────
+// ─── Circuit Breakers (per-provider) ────────────────────────────────────────
 
 const circuitBreakerOptions: CircuitBreaker.Options = {
   timeout: parseInt(process.env.LLM_CIRCUIT_BREAKER_TIMEOUT_MS || "30000", 10),
@@ -131,7 +131,38 @@ const circuitBreakerOptions: CircuitBreaker.Options = {
   volumeThreshold: parseInt(process.env.LLM_CIRCUIT_BREAKER_VOLUME || "20", 10),
 };
 
-let circuitState: "closed" | "open" | "half_open" = "closed";
+const DEFAULT_LLM_TIMEOUT_MS = parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10);
+
+type ProviderState = "closed" | "open" | "half_open";
+const providerStates: Record<ModelProvider, ProviderState> = {
+  openai: "closed",
+  anthropic: "closed",
+  ollama: "closed",
+};
+
+function overallCircuitState(): ProviderState {
+  const states = Object.values(providerStates);
+  if (states.every((s) => s === "open")) return "open";
+  if (states.some((s) => s !== "closed")) return "half_open";
+  return "closed";
+}
+
+function createProviderBreaker(provider: ModelProvider, fn: (...args: any[]) => Promise<any>): CircuitBreaker {
+  const breaker = new CircuitBreaker(fn, circuitBreakerOptions);
+  breaker.on("open", () => {
+    providerStates[provider] = "open";
+    logger.warn({ provider }, `LLM circuit breaker OPEN for ${provider} — requests fast-failed`);
+  });
+  breaker.on("halfOpen", () => {
+    providerStates[provider] = "half_open";
+    logger.info({ provider }, `LLM circuit breaker HALF_OPEN for ${provider}`);
+  });
+  breaker.on("close", () => {
+    providerStates[provider] = "closed";
+    logger.info({ provider }, `LLM circuit breaker CLOSED for ${provider}`);
+  });
+  return breaker;
+}
 
 interface CompletionUsage {
   prompt_tokens: number;
@@ -212,6 +243,7 @@ async function callAnthropic(
   temperature: number,
   maxTokens: number | undefined,
   toolDefinitions: ToolDef[] | undefined,
+  signal?: AbortSignal,
 ): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY not configured");
@@ -245,6 +277,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
+    signal: signal ?? AbortSignal.timeout(DEFAULT_LLM_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -284,6 +317,7 @@ async function callOllama(
   temperature: number,
   maxTokens: number | undefined,
   toolDefinitions: ToolDef[] | undefined,
+  signal?: AbortSignal,
 ): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
   const body: Record<string, unknown> = {
     model,
@@ -310,6 +344,7 @@ async function callOllama(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: signal ?? AbortSignal.timeout(DEFAULT_LLM_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -341,6 +376,73 @@ async function callOllama(
 
 // ─── Unified Multi-Model Fallback ─────────────────────────────────────────
 
+async function callOpenAIProvider(
+  openaiMessages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  toolDefinitions: ToolDef[] | undefined,
+  signal?: AbortSignal
+): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
+  if (!openai) {
+    throw new Error("OpenAI client not configured");
+  }
+  const openaiModel = MODEL_TO_OPENAI[model] ?? model;
+  return retryWithBackoff(async () => {
+    const openaiTools = toolDefinitions?.map((td) => ({
+      type: "function" as const,
+      function: {
+        name: td.name,
+        description: td.description,
+        parameters: (() => {
+          if (typeof td.input_schema === "string") {
+            try { return JSON.parse(td.input_schema); } catch { return { type: "object", properties: {} }; }
+          }
+          return td.input_schema || { type: "object", properties: {} };
+        })(),
+      },
+    }));
+
+    const response = await openai.chat.completions.create(
+      {
+        model: openaiModel,
+        messages: openaiMessages,
+        tools: openaiTools?.length ? openaiTools : undefined,
+        temperature,
+        max_tokens: Math.min((maxTokens || 4096), 16384),
+      },
+      { signal }
+    );
+
+    const choice = response.choices[0];
+    if (!choice) {
+      throw new LLM400Error("Empty response from model", { statusCode: 0, model });
+    }
+
+    const msg = choice.message;
+    const toolCalls: ToolCallResult[] = (msg.tool_calls || []).map((tc) => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: tc.function.arguments,
+    }));
+
+    return {
+      content: msg.content,
+      toolCalls,
+      model,
+      usage: response.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+  }, 3, 1000);
+}
+
+const openaiBreaker = createProviderBreaker("openai", callOpenAIProvider);
+const anthropicBreaker = createProviderBreaker("anthropic", async (messages, model, temp, maxTokens, tools, signal) =>
+  retryWithBackoff(() => callAnthropic(messages, model, temp, maxTokens, tools, signal), 3, 1000)
+);
+const ollamaBreaker = createProviderBreaker("ollama", async (messages, model, temp, maxTokens, tools, signal) =>
+  retryWithBackoff(() => callOllama(messages, model, temp, maxTokens, tools, signal), 2, 1000)
+);
+
 async function callLLMWithFallback(
   openaiMessages: any[],
   preferredModel: string,
@@ -356,13 +458,11 @@ async function callLLMWithFallback(
 
     try {
       if (provider === "anthropic") {
-        const result = await retryWithBackoff(async () => callAnthropic(openaiMessages, model, temperature, maxTokens, toolDefinitions), 3, 1000);
-        return result;
+        return await anthropicBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
       }
 
       if (provider === "ollama") {
-        const result = await retryWithBackoff(async () => callOllama(openaiMessages, model, temperature, maxTokens, toolDefinitions), 2, 1000);
-        return result;
+        return await ollamaBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
       }
 
       // Default: OpenAI-compatible API
@@ -371,56 +471,14 @@ async function callLLMWithFallback(
         continue;
       }
 
-      const openaiModel = MODEL_TO_OPENAI[model] ?? model;
-      const result = await retryWithBackoff(async () => {
-        const openaiTools = toolDefinitions?.map((td) => ({
-          type: "function" as const,
-          function: {
-            name: td.name,
-            description: td.description,
-            parameters: (() => {
-              if (typeof td.input_schema === "string") {
-                try { return JSON.parse(td.input_schema); } catch { return { type: "object", properties: {} }; }
-              }
-              return td.input_schema || { type: "object", properties: {} };
-            })(),
-          },
-        }));
-
-        const response = await openai.chat.completions.create(
-          {
-            model: openaiModel,
-            messages: openaiMessages,
-            tools: openaiTools?.length ? openaiTools : undefined,
-            temperature,
-            max_tokens: Math.min((maxTokens || 4096), 16384),
-          },
-          { signal }
-        );
-
-        const choice = response.choices[0];
-        if (!choice) {
-          throw new LLM400Error("Empty response from model", { statusCode: 0, model });
-        }
-
-        const msg = choice.message;
-        const toolCalls: ToolCallResult[] = (msg.tool_calls || []).map((tc) => ({
-          id: tc.id,
-          name: tc.function.name,
-          arguments: tc.function.arguments,
-        }));
-
-        return {
-          content: msg.content,
-          toolCalls,
-          model,
-          usage: response.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        };
-      }, 3, 1000);
-
-      return result;
+      return await openaiBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
     } catch (err: any) {
       const status = err.status || err.statusCode || 0;
+
+      if (err.name === "CircuitBreakerOpenError" || err.name === "BulkheadOverloadError") {
+        logger.warn({ model, provider, err: err.message }, "Circuit breaker open, trying fallback model");
+        continue;
+      }
 
       if (status === 400 || status === 422) {
         throw new LLM400Error(`LLM bad request: ${err.message}`, { statusCode: status, model });
@@ -446,29 +504,6 @@ async function callLLMWithFallback(
 
   throw new Error("All models in fallback chain exhausted");
 }
-
-// Wrap with circuit breaker
-const circuitBreaker = new CircuitBreaker(
-  (messages: any[], model: string, temp: number, maxTokens: number | undefined, tools: ToolDef[] | undefined, signal?: AbortSignal) =>
-    callLLMWithFallback(messages, model, temp, maxTokens, tools, signal),
-  circuitBreakerOptions
-);
-
-circuitBreaker.on("open", () => {
-  circuitState = "open";
-  logger.warn("LLM circuit breaker OPEN — requests will be fast-failed");
-});
-circuitBreaker.on("halfOpen", () => {
-  circuitState = "half_open";
-  logger.info("LLM circuit breaker HALF_OPEN — testing with limited traffic");
-});
-circuitBreaker.on("close", () => {
-  circuitState = "closed";
-  logger.info("LLM circuit breaker CLOSED — normal operation resumed");
-});
-circuitBreaker.on("fallback", () => {
-  logger.warn("LLM circuit breaker fallback triggered");
-});
 
 const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
@@ -541,7 +576,7 @@ server.addService(llmService.service, {
       const abort = new AbortController();
       const timer = setTimeout(() => abort.abort(), timeoutMs);
 
-      const result = await circuitBreaker.fire(
+      const result = await callLLMWithFallback(
         openaiMessages,
         preferredModel || "gpt-4o",
         temperature ?? 0.7,
@@ -609,7 +644,7 @@ server.addService(llmService.service, {
 
 server.addService(HEALTH_SERVICE, {
   check: (_call: any, callback: any) => {
-    const healthy = circuitState !== "open" && (!!openai || !!ANTHROPIC_API_KEY || true); // Ollama is always available
+    const healthy = overallCircuitState() !== "open" && (!!openai || !!ANTHROPIC_API_KEY || true); // Ollama is always available
     callback(null, { status: healthy ? "SERVING" : "NOT_SERVING" });
   }
 });
@@ -629,13 +664,13 @@ if (process.env.NODE_ENV !== "test") {
 
   const healthServer = http.createServer((req, res) => {
     if (req.url === "/healthz" || req.url === "/readyz") {
-      const healthy = circuitState !== "open";
+      const healthy = overallCircuitState() !== "open";
       const code = healthy ? 200 : 503;
       res.writeHead(code, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         status: healthy ? "SERVING" : "NOT_SERVING",
         service: "llm-router",
-        circuit_breaker: circuitState,
+        circuit_breaker: overallCircuitState(),
         providers: {
           openai: !!openai,
           anthropic: !!ANTHROPIC_API_KEY,

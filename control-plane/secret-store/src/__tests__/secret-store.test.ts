@@ -150,7 +150,7 @@ describe("Secret Store — gRPC integration", () => {
         data: { username: "admin", password: "hunter2" },
         type: "environment_variable"
       }, () => {
-        client.GetSecret({ name: "my-secret", namespace: "test-ns" }, (err: any, response: any) => {
+        client.GetSecret({ name: "my-secret", namespace: "test-ns", agent_id: "test-ns/agent-123" }, (err: any, response: any) => {
           expect(err).toBeNull();
           expect(response.spec.data.username).toBe("admin");
           expect(response.spec.data.password).toBe("hunter2");
@@ -159,8 +159,26 @@ describe("Secret Store — gRPC integration", () => {
       });
     });
 
+    it("should deny access when agent is outside the requested namespace", (done) => {
+      if (!bundle) return done();
+      client.GetSecret({ name: "my-secret", namespace: "test-ns", agent_id: "other-ns/agent-456" }, (err: any, _response: any) => {
+        expect(err).toBeDefined();
+        expect(err.code).toBe(grpc.status.PERMISSION_DENIED);
+        done();
+      });
+    });
+
+    it("should deny access when agent_id is missing", (done) => {
+      if (!bundle) return done();
+      client.GetSecret({ name: "my-secret", namespace: "test-ns" }, (err: any, _response: any) => {
+        expect(err).toBeDefined();
+        expect(err.code).toBe(grpc.status.PERMISSION_DENIED);
+        done();
+      });
+    });
+
     it("should return NOT_FOUND for missing secret", (done) => {
-      client.GetSecret({ name: "nonexistent", namespace: "default" }, (err: any, _response: any) => {
+      client.GetSecret({ name: "nonexistent", namespace: "default", agent_id: "default/agent-789" }, (err: any, _response: any) => {
         expect(err).toBeDefined();
         expect(err.code).toBe(grpc.status.NOT_FOUND);
         done();

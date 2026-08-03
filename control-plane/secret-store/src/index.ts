@@ -11,7 +11,7 @@ import http from "http";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
-import { getServerCredentials, encrypt, decrypt, type EncryptedPayload } from "@e-gaop/shared";
+import { getServerCredentials, encrypt, decrypt, extractNamespace, type EncryptedPayload } from "@e-gaop/shared";
 import { SecretRepository } from "./repository";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
@@ -109,10 +109,37 @@ server.addService(secretService.service, {
   },
 
   GetSecret: async (call: any, callback: any) => {
-    const { name, namespace } = call.request;
+    const { name, namespace, agent_id } = call.request;
     const key = `${namespace}/${name}`;
-    logger.info({ key }, "Retrieving and decrypting secret from PostgreSQL");
+    logger.info({ key, agent_id }, "Retrieving and decrypting secret from PostgreSQL");
     try {
+      if (!agent_id) {
+        try {
+          createAuditEntry(
+            "secret.access",
+            "warn",
+            { type: "service", id: "secret-store" },
+            { name: "GetSecret", result: "denied", reason: "missing agent_id scope" },
+            { type: "secret", id: key, namespace },
+          );
+        } catch { /* audit failure is non-fatal */ }
+        return callback({ code: grpc.status.PERMISSION_DENIED, message: "GetSecret requires agent_id for scoped access" });
+      }
+
+      const agentNamespace = extractNamespace(agent_id);
+      if (agentNamespace !== namespace) {
+        try {
+          createAuditEntry(
+            "secret.access",
+            "warn",
+            { type: "service", id: "secret-store" },
+            { name: "GetSecret", result: "denied", reason: "namespace mismatch" },
+            { type: "secret", id: key, namespace },
+          );
+        } catch { /* audit failure is non-fatal */ }
+        return callback({ code: grpc.status.PERMISSION_DENIED, message: `Agent in '${agentNamespace}' cannot access secret in '${namespace}'` });
+      }
+
       const row = await repo.get(namespace, name);
       if (!row) {
         try {

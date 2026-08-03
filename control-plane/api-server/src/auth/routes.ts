@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "crypto";
 import pino from "pino";
+import Redis from "ioredis";
 import { hashPassword, comparePassword, signJWT, verifyJWT, createAuditEntry, type JWTClaims } from "@e-gaop/shared";
 import {
   getUserRepository,
@@ -19,6 +20,62 @@ if (!_jwtSecret || _jwtSecret.length < 32) {
 }
 const JWT_SECRET: string = _jwtSecret;
 const JWT_EXPIRES_SEC = 86400; // 24 hours
+
+// ── Token revocation (Redis-backed blacklist) ────────────────────────────────
+// A SHA-256 digest of the raw token is stored with a TTL equal to the token's
+// remaining lifetime. authenticate() rejects any token found on the blacklist.
+
+let redisClient: Redis | null = null;
+if (process.env.NODE_ENV !== "test") {
+  redisClient = new Redis({
+    host: process.env.REDIS_HOST || "redis",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    password: process.env.REDIS_PASSWORD || undefined,
+    lazyConnect: true,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times: number) => Math.min(times * 100, 2000),
+  });
+  redisClient.on("error", (err) => logger.warn({ err: err.message }, "Redis connection issue for token revocation"));
+}
+
+function tokenRevocationKey(token: string): string {
+  return `egaop:revoked:${crypto.createHash("sha256").update(token).digest("hex")}`;
+}
+
+async function isTokenRevoked(token: string): Promise<boolean> {
+  if (!redisClient) return false;
+  try {
+    const exists = await redisClient.exists(tokenRevocationKey(token));
+    return exists === 1;
+  } catch (err: any) {
+    logger.warn({ err: err.message }, "Token revocation check failed — failing open");
+    return false;
+  }
+}
+
+async function revokeToken(token: string): Promise<void> {
+  if (!redisClient) return;
+  let ttl = JWT_EXPIRES_SEC;
+  const claims = verifyJWT(token, JWT_SECRET);
+  if (claims) {
+    ttl = Math.max(1, claims.exp - Math.floor(Date.now() / 1000));
+  }
+  try {
+    await redisClient.set(tokenRevocationKey(token), "1", "EX", ttl);
+  } catch (err: any) {
+    logger.warn({ err: err.message }, "Token revocation write failed — token may remain valid");
+  }
+}
+
+function extractTokenFromRequest(request: FastifyRequest): string | null {
+  const authHeader = request.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+  const cookies = request.cookies;
+  return cookies?.egaop_token ?? null;
+}
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 
@@ -48,6 +105,11 @@ export async function authenticate(
   const claims = verifyJWT(token, JWT_SECRET);
   if (!claims) {
     reply.code(401).send({ error: { message: "Invalid or expired token", code: "UNAUTHORIZED" } });
+    return;
+  }
+
+  if (await isTokenRevoked(token)) {
+    reply.code(401).send({ error: { message: "Token has been revoked", code: "UNAUTHORIZED" } });
     return;
   }
 
@@ -355,6 +417,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post("/api/auth/logout", { preHandler: [authenticate] }, async (request) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const claims = (request as any).user as JWTClaims;
+    const token = extractTokenFromRequest(request);
+
+    if (token) {
+      await revokeToken(token);
+    }
 
     try {
       createAuditEntry(
@@ -367,9 +434,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       );
     } catch { /* audit failure is non-fatal */ }
 
-    // In a real implementation, invalidate the token/session
     return {
-      data: { message: "Logged out successfully" },
+      data: { message: "Logged out successfully. Token has been revoked." },
       meta: { traceId: crypto.randomUUID(), timestamp: new Date().toISOString() },
     };
   });
