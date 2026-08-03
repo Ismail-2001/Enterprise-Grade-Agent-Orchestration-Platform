@@ -14,7 +14,7 @@ spec:
       app.kubernetes.io/name: admin-console
       app.kubernetes.io/instance: {{ .Release.Name }}
   endpoints:
-    - port: health
+    - port: http
       path: /metrics
       interval: 15s
 {{- end }}

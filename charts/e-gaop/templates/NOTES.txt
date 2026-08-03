@@ -1,0 +1,70 @@
+E-GAOP has been deployed to namespace: {{ .Release.Namespace }}
+
+═══════════════════════════════════════════════════════════════════════════════
+  SERVICES
+═══════════════════════════════════════════════════════════════════════════════
+
+{{- if .Values.ingress.enabled }}
+
+  Ingress is enabled:
+    Admin Console: https://{{ .Values.ingress.adminHost }}
+    API Server:    https://{{ .Values.ingress.apiHost }}
+{{- else }}
+
+  Port-forward to access services:
+
+    # Admin Console (UI)
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-admin-console 3000:{{ index .Values "admin-console" "port" | default 3000 }}
+    open http://localhost:3000
+
+    # API Server (REST)
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-api-server {{ index .Values "api-server" "restPort" | default 3001 }}:{{ index .Values "api-server" "restPort" | default 3001 }}
+    curl http://localhost:{{ index .Values "api-server" "restPort" | default 3001 }}/healthz
+{{- end }}
+
+═══════════════════════════════════════════════════════════════════════════════
+  DATABASE MIGRATION
+═══════════════════════════════════════════════════════════════════════════════
+
+{{- if .Values.migration.enabled }}
+
+  Migration Job ran as a pre-install/pre-upgrade hook.
+  Check status:
+
+    kubectl get jobs -n {{ .Release.Namespace }} -l app.kubernetes.io/component=migration
+{{- end }}
+
+═══════════════════════════════════════════════════════════════════════════════
+  MULTI-MODEL LLM
+═══════════════════════════════════════════════════════════════════════════════
+
+  LLM Router supports: OpenAI, Anthropic Claude, Ollama (local)
+  Configure API keys via:
+
+    # Option A: Static values (dev only)
+    helm upgrade {{ .Release.Name }} charts/e-gaop \
+      --set llm-router.openaiApiKey=sk-... \
+      --set llm-router.anthropicApiKey=sk-ant-...
+
+    # Option B: External Secrets (production)
+    # Configure externalSecrets.vault.path in values-production.yaml
+
+═══════════════════════════════════════════════════════════════════════════════
+  SANDBOX ISOLATION
+═══════════════════════════════════════════════════════════════════════════════
+
+  Default isolation: Enhanced (gVisor)
+  Change via: workflow-engine.sandboxIsolationLevel
+
+═══════════════════════════════════════════════════════════════════════════════
+  USEFUL COMMANDS
+═══════════════════════════════════════════════════════════════════════════════
+
+  # Check all pods
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/part-of=e-gaop
+
+  # View logs
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=api-server -f
+
+  # Run tests
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

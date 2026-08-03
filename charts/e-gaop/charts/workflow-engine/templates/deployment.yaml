@@ -24,6 +24,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.healthPort }}"
     spec:
+      serviceAccountName: {{ .Release.Name }}-e-gaop-app
       containers:
         - name: workflow-engine
           image: "{{ .Values.image }}:{{ .Values.tag }}"

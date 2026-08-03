@@ -1,6 +1,16 @@
 import path from "path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+
+const mockPgPool = {
+  query: jest.fn().mockResolvedValue({ rows: [{ "?column?": 1 }] }),
+  end: jest.fn().mockResolvedValue(undefined),
+  on: jest.fn(),
+};
+jest.mock("pg", () => ({
+  Pool: jest.fn(() => mockPgPool),
+}));
+
 import { server, traceStore } from "../index";
 
 const PROTO_PATH = path.resolve(__dirname, "../../../api/proto/egaop/v1/execution.proto");

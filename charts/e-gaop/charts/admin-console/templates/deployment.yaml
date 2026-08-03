@@ -21,6 +21,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: e-gaop
     spec:
+      serviceAccountName: {{ .Release.Name }}-e-gaop-app
       containers:
         - name: admin-console
           image: "{{ .Values.image }}:{{ .Values.tag }}"

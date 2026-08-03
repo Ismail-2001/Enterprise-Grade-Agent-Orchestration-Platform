@@ -15,6 +15,15 @@ jest.mock("ioredis", () => {
   return jest.fn().mockImplementation(() => mockRedis);
 });
 
+const mockPgPool = {
+  query: jest.fn().mockResolvedValue({ rows: [{ "?column?": 1 }] }),
+  end: jest.fn().mockResolvedValue(undefined),
+  on: jest.fn(),
+};
+jest.mock("pg", () => ({
+  Pool: jest.fn(() => mockPgPool),
+}));
+
 import { server } from "../index";
 
 const PROTO_PATH = path.resolve(__dirname, "../../../api/proto/egaop/v1/memory.proto");

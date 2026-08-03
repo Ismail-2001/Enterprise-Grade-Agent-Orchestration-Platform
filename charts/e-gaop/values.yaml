@@ -22,6 +22,11 @@ tls:
   certManager:
     enabled: false
 
+# ─── ServiceAccount & RBAC ──────────────────────────────────────────────────
+# Creates a dedicated ServiceAccount with minimal RBAC (read configmaps/secrets/pods).
+serviceAccount:
+  create: true
+
 # ─── External Secrets Operator ──────────────────────────────────────────────
 # Disabled by default for local kind deploys (no Vault/ESO). When disabled,
 # templates/secrets.yaml renders a managed Secret directly from .Values.secrets.
