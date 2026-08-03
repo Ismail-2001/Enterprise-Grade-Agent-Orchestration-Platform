@@ -13,6 +13,11 @@ openaiApiKey: ""
 anthropicApiKey: ""
 anthropicBaseUrl: "https://api.anthropic.com"
 ollamaBaseUrl: "http://localhost:11434"
+circuitBreaker:
+  failureThreshold: 50
+  recoveryTimeMs: 30000
+  requestTimeoutMs: 30000
+  halfOpenMaxRequests: 20
 resources:
   requests:
     cpu: 200m
@@ -22,6 +27,12 @@ resources:
     memory: 1Gi
 serviceMonitor:
   enabled: false
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  cpuTarget: 70
+  memoryTarget: 80
 tls:
   certManager:
     enabled: false

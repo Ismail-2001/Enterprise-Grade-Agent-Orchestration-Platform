@@ -186,6 +186,12 @@ api-server:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 secret-store:
   enabled: true
@@ -197,6 +203,12 @@ secret-store:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 workflow-engine:
   enabled: true
@@ -210,6 +222,12 @@ workflow-engine:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 llm-router:
   enabled: true
@@ -231,6 +249,12 @@ llm-router:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 tool-proxy:
   enabled: true
@@ -243,6 +267,12 @@ tool-proxy:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 sandbox-runtime:
   enabled: true
@@ -254,6 +284,12 @@ sandbox-runtime:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 memory-plane:
   enabled: true
@@ -265,6 +301,12 @@ memory-plane:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 observability-plane:
   enabled: true
@@ -276,6 +318,12 @@ observability-plane:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 admin-console:
   enabled: true
@@ -286,6 +334,12 @@ admin-console:
   tls:
     certManager:
       enabled: false
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
 
 # ─── Database Migration ─────────────────────────────────────────────────────
 # Runs as a pre-install/pre-upgrade Helm hook Job.
@@ -294,3 +348,53 @@ migration:
   enabled: true
   image: postgres
   tag: "16"
+
+metricsServer:
+  enabled: true
+
+# ─── Canary / Blue-Green Deployments ────────────────────────────────────────
+# Enable to deploy canary pods alongside stable. Traffic split requires Istio.
+# Without Istio, canary pods run but receive no traffic until manually promoted.
+canary:
+  enabled: false
+  istioEnabled: false
+  services:
+    - name: api-server
+      enabled: true
+      image: egaop/api-server
+      tag: latest
+      grpcPort: 50051
+      healthPort: 15051
+      weight: 10
+      canaryReplicas: 1
+    - name: llm-router
+      enabled: true
+      image: egaop/llm-router
+      tag: latest
+      grpcPort: 50053
+      healthPort: 15053
+      weight: 10
+      canaryReplicas: 1
+    - name: workflow-engine
+      enabled: true
+      image: egaop/workflow-engine
+      tag: latest
+      grpcPort: 50058
+      healthPort: 15058
+      weight: 10
+      canaryReplicas: 1
+
+# ─── Circuit Breaker ────────────────────────────────────────────────────────
+# Applied to LLM Router and Tool Proxy. Prevents cascade failures when
+# downstream services (OpenAI, Anthropic, sandbox runtimes) are degraded.
+circuitBreaker:
+  llmRouter:
+    failureThreshold: 5
+    recoveryTimeMs: 30000
+    requestTimeoutMs: 30000
+    halfOpenMaxRequests: 3
+  toolProxy:
+    failureThreshold: 5
+    recoveryTimeMs: 15000
+    requestTimeoutMs: 10000
+    halfOpenMaxRequests: 2

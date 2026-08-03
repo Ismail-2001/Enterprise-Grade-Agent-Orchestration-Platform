@@ -14,4 +14,8 @@ data:
   RATE_LIMIT_RPM: {{ .Values.rateLimitRpm | default "30" | quote }}
   ANTHROPIC_BASE_URL: {{ .Values.anthropicBaseUrl | default "https://api.anthropic.com" | quote }}
   OLLAMA_BASE_URL: {{ .Values.ollamaBaseUrl | default "http://localhost:11434" | quote }}
+  LLM_CIRCUIT_BREAKER_TIMEOUT_MS: {{ .Values.circuitBreaker.requestTimeoutMs | default "30000" | quote }}
+  LLM_CIRCUIT_BREAKER_THRESHOLD: {{ .Values.circuitBreaker.failureThreshold | default "50" | quote }}
+  LLM_CIRCUIT_BREAKER_RESET_MS: {{ .Values.circuitBreaker.recoveryTimeMs | default "30000" | quote }}
+  LLM_CIRCUIT_BREAKER_VOLUME: {{ .Values.circuitBreaker.halfOpenMaxRequests | default "20" | quote }}
 {{- end }}

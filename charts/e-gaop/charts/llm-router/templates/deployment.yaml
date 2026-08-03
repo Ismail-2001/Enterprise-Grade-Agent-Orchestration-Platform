@@ -89,6 +89,8 @@ spec:
           {{- end }}
       securityContext:
         fsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
       {{- if .Values.tls.certManager.enabled }}
       volumes:
         - name: tls-certs
