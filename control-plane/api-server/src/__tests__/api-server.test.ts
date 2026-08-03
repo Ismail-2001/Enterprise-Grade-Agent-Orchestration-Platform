@@ -3,6 +3,9 @@ jest.mock("pg", () => {
   return { Pool: jest.fn(() => mPool) };
 });
 
+process.env.JWT_SECRET = "test-secret-key-that-is-long-enough-for-validation-32chars";
+process.env.NODE_ENV = "test";
+
 import path from "path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";

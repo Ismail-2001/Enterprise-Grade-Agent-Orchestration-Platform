@@ -20,11 +20,21 @@ const logger = pino({
 });
 
 const HEALTH_PORT = parseInt(process.env.WORKFLOW_ENGINE_HEALTH_PORT || '15058', 10);
+const DLQ_SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN;
 let workerReady = false;
+
+function verifyServiceToken(req: http.IncomingMessage): boolean {
+  if (!DLQ_SERVICE_TOKEN) return false;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ') && authHeader.slice(7) === DLQ_SERVICE_TOKEN) return true;
+  const tokenHeader = req.headers['x-service-token'];
+  if (typeof tokenHeader === 'string' && tokenHeader === DLQ_SERVICE_TOKEN) return true;
+  return false;
+}
 
 const healthServer = http.createServer(async (req, res) => {
   const url = req.url ?? '/';
-  // ── Health / Readiness ─────────────────────────────────────────────
+  // ── Health / Readiness (unauthenticated) ───────────────────────────
   if (url === '/healthz' || url === '/readyz') {
     const status = workerReady ? 'SERVING' : 'NOT_SERVING';
     const code = workerReady ? 200 : 503;
@@ -33,47 +43,56 @@ const healthServer = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── DLQ Admin: list failed executions ──────────────────────────────
-  if (url === '/dlq' && req.method === 'GET') {
-    try {
-      const pool = await getPool();
-      const { rows } = await pool.query(
-        `SELECT id, agent_id, execution_id, namespace, status, error_message,
-                output, total_cost, iterations, failed_at, replayed_at, replay_count
-         FROM dead_letter_queue
-         ORDER BY failed_at DESC
-         LIMIT 100`
-      );
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ entries: rows }));
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: msg }));
+  // ── DLQ Admin (authenticated) ─────────────────────────────────────
+  if (url.startsWith('/dlq')) {
+    if (!verifyServiceToken(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: valid service token required' }));
+      return;
     }
-    return;
-  }
 
-  // ── DLQ Admin: replay a failed execution ──────────────────────────
-  const replayMatch = url.match(/^\/dlq\/([^/]+)\/replay$/);
-  if (replayMatch && req.method === 'POST') {
-    try {
-      const executionId = replayMatch[1];
-      const pool = await getPool();
-      await pool.query(
-        `UPDATE dead_letter_queue
-         SET replayed_at = NOW(), replay_count = replay_count + 1
-         WHERE execution_id = $1`,
-        [executionId]
-      );
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ replayed: true, execution_id: executionId }));
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: msg }));
+    // GET /dlq — list failed executions
+    if (url === '/dlq' && req.method === 'GET') {
+      try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+          `SELECT id, agent_id, execution_id, namespace, status, error_message,
+                  output, total_cost, iterations, failed_at, replayed_at, replay_count
+           FROM dead_letter_queue
+           ORDER BY failed_at DESC
+           LIMIT 100`
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ entries: rows }));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: msg }));
+      }
+      return;
     }
-    return;
+
+    // POST /dlq/:id/replay — replay a failed execution
+    const replayMatch = url.match(/^\/dlq\/([^/]+)\/replay$/);
+    if (replayMatch && req.method === 'POST') {
+      try {
+        const executionId = replayMatch[1];
+        const pool = await getPool();
+        await pool.query(
+          `UPDATE dead_letter_queue
+           SET replayed_at = NOW(), replay_count = replay_count + 1
+           WHERE execution_id = $1`,
+          [executionId]
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ replayed: true, execution_id: executionId }));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: msg }));
+      }
+      return;
+    }
   }
 
   res.writeHead(404);

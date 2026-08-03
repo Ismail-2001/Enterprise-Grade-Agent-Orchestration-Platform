@@ -76,10 +76,42 @@ const SANDBOX_TOOLS = new Set(["code_interpreter", "file_read", "file_write", "d
 
 const SAFE_PATH_RE = /^[a-zA-Z0-9_/.-]+$/;
 
+const ALLOWED_WEB_FETCH_HOSTS = new Set([
+  "api.serpapi.com",
+  "r.jina.ai",
+  "api.openai.com",
+  "api.anthropic.com",
+  "en.wikipedia.org",
+  "wiki.wikipedia.org",
+]);
+
 function isPrivateIP(ip: string): boolean {
-  if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|169\.254\.)/.test(ip)) return true;
+  if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|169\.254\.|100\.64\.)/.test(ip)) return true;
   if (/^\[/.test(ip)) return true;
   return false;
+}
+
+function isBlockedURL(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return true;
+    if (isPrivateIP(parsed.hostname)) return true;
+    if (/\.internal$/i.test(parsed.hostname)) return true;
+    if (/\.local$/i.test(parsed.hostname)) return true;
+    if (/metadata\.google\.internal/i.test(parsed.hostname)) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function isAllowedWebFetchHost(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    return ALLOWED_WEB_FETCH_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function validateSandboxArgs(toolName: string, args: any): string | null {
@@ -163,6 +195,22 @@ server.addService(toolService.service, {
     try {
       let url = config.endpoint;
       if (url.includes("__URL__") && args?.url) {
+        if (isBlockedURL(args.url)) {
+          logger.warn({ tool_name, url: args.url }, "SSRF blocked: URL targets private/internal network");
+          return callback(null, {
+            status: "failed",
+            error_message: "URL targets a private or internal network address",
+            latency_ms: Date.now() - startTime,
+          });
+        }
+        if (tool_name === "web_fetch" && !isAllowedWebFetchHost(args.url)) {
+          logger.warn({ tool_name, url: args.url }, "SSRF blocked: URL not in allowlist");
+          return callback(null, {
+            status: "failed",
+            error_message: "URL is not in the allowed hosts list for web_fetch",
+            latency_ms: Date.now() - startTime,
+          });
+        }
         url = url.replace("__URL__", encodeURIComponent(args.url));
       }
 
@@ -194,7 +242,7 @@ server.addService(toolService.service, {
         ...creds,
       };
 
-      const fetchOpts: any = { method: config.method, headers };
+      const fetchOpts: any = { method: config.method, headers, signal: AbortSignal.timeout(30000) };
       if (config.method === "POST" && args) {
         fetchOpts.body = JSON.stringify(args);
       }

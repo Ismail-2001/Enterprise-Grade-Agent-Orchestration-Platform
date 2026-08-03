@@ -15,6 +15,28 @@ import pino from "pino";
 import { PolicyPlaneService } from "./service";
 import { getServerCredentials } from "@e-gaop/shared";
 
+const OPA_URL = process.env.OPA_URL || "http://localhost:8181";
+
+async function verifyOPAPolicies(logger: pino.Logger): Promise<void> {
+  const requiredPackages = ["egaop/admission", "egaop/execution", "egaop/runtime"];
+  for (const pkg of requiredPackages) {
+    try {
+      const response = await fetch(`${OPA_URL}/v1/data/${pkg}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        logger.info(`OPA policy package '${pkg}' loaded successfully`);
+      } else {
+        logger.warn({ status: response.status }, `OPA policy package '${pkg}' not found (HTTP ${response.status})`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ err: msg }, `OPA policy package '${pkg}' verification failed`);
+    }
+  }
+}
+
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
     path: "/grpc.health.v1.Health/Check",
@@ -109,6 +131,10 @@ if (process.env.NODE_ENV !== "test") {
     process.env.POLICY_PLANE_HEALTH_PORT || "15059",
     10
   );
+
+  verifyOPAPolicies(logger).catch((err) => {
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "OPA policy verification failed at startup");
+  });
 
   server.bindAsync(
     `0.0.0.0:${POLICY_PORT}`,

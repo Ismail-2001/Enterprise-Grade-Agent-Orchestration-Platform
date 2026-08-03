@@ -10,7 +10,14 @@ import {
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
-const JWT_SECRET = process.env.JWT_SECRET || "";
+const _jwtSecret = process.env.JWT_SECRET;
+if (!_jwtSecret || _jwtSecret.length < 32) {
+  throw new Error(
+    "FATAL: JWT_SECRET must be set and >= 32 characters. " +
+    "Generate with: openssl rand -hex 32"
+  );
+}
+const JWT_SECRET: string = _jwtSecret;
 const JWT_EXPIRES_SEC = 86400; // 24 hours
 
 // ── Auth middleware ──────────────────────────────────────────────────────────

@@ -53,15 +53,33 @@ function verifyHS256JWT(
 
   const data = `${headerB64}.${payloadB64}`;
   const expectedSig = crypto.createHmac("sha256", secret).update(data).digest("base64url");
-  const actualSig = signatureB64.replace(/-/g, "+").replace(/_/g, "/");
-  const expectedSigBase64 = expectedSig.replace(/-/g, "+").replace(/_/g, "/");
 
-  if (actualSig !== expectedSigBase64) {
+  // Timing-safe comparison to prevent timing attacks
+  const actualSigBuf = Buffer.from(signatureB64);
+  const expectedSigBuf = Buffer.from(expectedSig);
+  if (actualSigBuf.length !== expectedSigBuf.length || !crypto.timingSafeEqual(actualSigBuf, expectedSigBuf)) {
     return { valid: false, payload: null, error: "Invalid signature" };
   }
 
   try {
     const payload = JSON.parse(base64UrlDecode(payloadB64).toString("utf8"));
+
+    // Validate expiration (exp)
+    if (typeof payload.exp === "number") {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec > payload.exp) {
+        return { valid: false, payload: null, error: "Token expired" };
+      }
+    }
+
+    // Validate not-before (nbf)
+    if (typeof payload.nbf === "number") {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec < payload.nbf) {
+        return { valid: false, payload: null, error: "Token not yet valid" };
+      }
+    }
+
     return { valid: true, payload };
   } catch {
     return { valid: false, payload: null, error: "Invalid JWT payload" };
@@ -177,6 +195,12 @@ function createPolicyInterceptor(options: PolicyInterceptorOptions) {
     );
     const namespace = claims.namespace ?? extractNamespaceFromCN(peerInfo.CN);
 
+    // Extract action from gRPC method name (e.g., "/egaop.v1.ExecutionService/StartAgent" → "execute")
+    const methodPath = call.getPath?.() ?? "";
+    const methodParts = methodPath.split("/");
+    const methodName = methodParts.length > 0 ? methodParts[methodParts.length - 1] ?? "" : "";
+    const action = methodName.toLowerCase().replace(/([a-z])([A-Z])/g, "$1_$2");
+
     const input: PolicyInput = {
       subject: {
         namespace,
@@ -184,7 +208,7 @@ function createPolicyInterceptor(options: PolicyInterceptorOptions) {
         cn: peerInfo.CN,
         organization: peerInfo.organization,
       },
-      action: "unknown",
+      action: action || "unknown",
       resource: {
         namespace,
       },
