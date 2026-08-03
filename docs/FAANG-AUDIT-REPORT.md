@@ -633,7 +633,7 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 > **Status (2026-08-03):** All Phase 1 (Critical), Phase 2 (High), and 5 of 8 Phase 3 (Medium) items are **implemented and verified**.
 > - Phase 1 merged in commit `efbe490` (JWT fail-closed, DLQ auth, SSRF allowlist, OPA policy verification, JWT expiry + timing-safe compare, action extraction).
 > - Phase 2 merged in commit `de33429` (Redis token revocation, label-key SQLi allowlist, ETag hash-only cache, secret-store agent scoping, vector search auth, per-provider circuit breakers + AbortSignal timeouts, container cleanup on shutdown, container count limit, init command allowlist, seccomp profile + CapDrop ALL).
-> - Phase 3 merged in commit `PENDING` (PII regex expansion → CC/phone/DOB/IP, retry on 5xx + network errors, memory write-ahead log with retry/backoff, API versioning in response metadata + namespaces pagination, developer guide + runbooks).
+> - Phase 3 merged in commit `743c5dc` (PII regex expansion → CC/phone/DOB/IP, retry on 5xx + network errors, memory write-ahead log with retry/backoff, API versioning in response metadata + namespaces pagination, developer guide + runbooks).
 > - Verification: **297+ tests passing** across all workspaces; `tsc --noEmit` clean in every workspace; ESLint 0 errors and 0 warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**; docker-compose validates; Helm lint + template clean.
 
 ### Phase 1: Critical Security Fixes (1-2 days) — ✅ COMPLETE
