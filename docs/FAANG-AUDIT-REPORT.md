@@ -632,7 +632,7 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 
 > **Status (2026-08-03):** All Phase 1 (Critical) and Phase 2 (High) items are **implemented and verified**.
 > - Phase 1 merged in commit `efbe490` (JWT fail-closed, DLQ auth, SSRF allowlist, OPA policy verification, JWT expiry + timing-safe compare, action extraction).
-> - Phase 2 merged in commit `44d9e09` (Redis token revocation, label-key SQLi allowlist, ETag hash-only cache, secret-store agent scoping, vector search auth, per-provider circuit breakers + AbortSignal timeouts, container cleanup on shutdown, container count limit, init command allowlist, seccomp profile + CapDrop ALL).
+> - Phase 2 merged in commit `de33429` (Redis token revocation, label-key SQLi allowlist, ETag hash-only cache, secret-store agent scoping, vector search auth, per-provider circuit breakers + AbortSignal timeouts, container cleanup on shutdown, container count limit, init command allowlist, seccomp profile + CapDrop ALL).
 > - Verification: **289 tests passing** across all workspaces; `tsc --noEmit` clean in every modified package; ESLint 0 errors.
 
 ### Phase 1: Critical Security Fixes (1-2 days) — ✅ COMPLETE
