@@ -4,18 +4,20 @@
 
 **Production-grade orchestration for LLM-powered agents at scale.**
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/github/license/Ismail-2001/The-Kubernetes-of-AI-Agents)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](tsconfig.base.json)
 [![Node](https://img.shields.io/badge/node-24-339933?logo=node.js&logoColor=white)](.github/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/ci.yml?branch=main&label=CI)](.github/workflows/ci.yml)
+[![Security Scan](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/security-scan.yml?branch=main&label=security%20scan)](.github/workflows/security-scan.yml)
 [![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen)](#quality-gates)
-[![CI](https://img.shields.io/badge/CI-17%2F17%20green-success)](.github/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security%20scan-14%2F14%20green-success)](.github/workflows/security-scan.yml)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen)](SECURITY.md)
 [![Readiness](https://img.shields.io/badge/production%20readiness-97%25-brightgreen)](#current-status)
 [![mTLS](https://img.shields.io/badge/mTLS-enabled-blue)](packages/shared/src/tls.ts)
 [![Helm](https://img.shields.io/badge/Helm-11%20sub--charts-blue)](charts/e-gaop/)
+[![Last commit](https://img.shields.io/github/last-commit/Ismail-2001/The-Kubernetes-of-AI-Agents)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
+[![Repo size](https://img.shields.io/github/repo-size/Ismail-2001/The-Kubernetes-of-AI-Agents)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
 
-[For Hiring Managers](#for-hiring-managers--clients) · [Demo](#demo) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Benchmarks](#benchmarks) · [Security](#security) · [Roadmap](#roadmap)
+[For Hiring Managers](#for-hiring-managers--clients) · [Demo](#demo) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Benchmarks](#benchmarks) · [Security](#security) · [Roadmap](#roadmap) · [Changelog](CHANGELOG.md)
 
 </div>
 

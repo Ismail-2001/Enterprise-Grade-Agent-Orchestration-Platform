@@ -1,0 +1,33 @@
+# Standardize line endings — all text files are LF in the repo, CRLF on Windows checkout.
+* text=auto
+
+# Source code: normalize to LF in the repo, checkout native (LF on Unix, CRLF on Windows)
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.proto text eol=lf
+*.rego text eol=lf
+*.sh text eol=lf
+*.dockerfile text eol=lf
+Dockerfile text eol=lf
+
+# Binary files — never normalize
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.pem binary
+*.crt binary
+*.key binary
+*.tar binary
+*.gz binary
+*.zip binary
