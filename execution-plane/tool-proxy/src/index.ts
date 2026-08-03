@@ -48,12 +48,33 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const toolService = egaopProto.egaop.v1.ToolService;
 
-function scanForPII(data: any): boolean {
-  const piiRegex = /\b(?!000)(?!666)(?!9\d{2})\d{3}[- ]?(?!00)\d{2}[- ]?(?!0000)\d{4}\b/;
-  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
+const PII_PATTERNS: Array<{ type: string; re: RegExp }> = [
+  { type: "SSN", re: /\b(?!000)(?!666)(?!9\d{2})\d{3}[- ]?(?!00)\d{2}[- ]?(?!0000)\d{4}\b/ },
+  { type: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/ },
+  // Credit cards (Luhn-capable formats for Visa/MC/Amex/Discover, no spaces)
+  { type: "credit_card", re: /\b(?:\d{4}[- ]?){3}\d{4}\b|\b3[47]\d{2}[- ]?\d{6}[- ]?\d{5}\b|\b6(?:011|5\d{2})\d{3}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/ },
+  // US phone numbers (10 digits with optional +1, separators)
+  { type: "phone_us", re: /\b(\+?1[-. ]?)?\(?[2-9]\d{2}\)?[-. ]?\d{3}[-. ]?\d{4}\b/ },
+  // General international phone (E.164)
+  { type: "phone_e164", re: /\b\+[1-9]\d{1,3}[-. ]?\d{4,14}\b/ },
+  // Date of birth (YYYY-MM-DD / MM/DD/YYYY where year is plausible)
+  { type: "date_of_birth", re: /\b(?:19|20)\d{2}[-/](?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])\b|\b(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])[-/](?:19|20)\d{2}\b/ },
+  // IP address
+  { type: "ip_address", re: /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/ },
+];
 
+function scanForPII(data: any): boolean {
   const content = JSON.stringify(data);
-  return piiRegex.test(content) || emailRegex.test(content);
+  return PII_PATTERNS.some((p) => p.re.test(content));
+}
+
+function detectedPIIPatterns(data: any): string[] {
+  const content = JSON.stringify(data);
+  const found: string[] = [];
+  for (const p of PII_PATTERNS) {
+    if (p.re.test(content)) found.push(p.type);
+  }
+  return found;
 }
 
 interface ToolConfig {
@@ -153,6 +174,31 @@ function injectCredentials(toolName: string): Record<string, string> {
   return {};
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url: string, opts: any, maxRetries = 3): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, opts);
+      if (res.status >= 500 && res.status <= 599 && attempt < maxRetries) {
+        await sleep(200 * 2 ** attempt);
+        continue;
+      }
+      return res;
+    } catch (err: unknown) {
+      lastErr = err;
+      // Network-level errors (ECONNRESET, ENOTFOUND, etc.) are retryable; abort is not.
+      const name = (err as any)?.name || "";
+      if (name === "AbortError" || attempt >= maxRetries) throw err;
+      await sleep(200 * 2 ** attempt);
+    }
+  }
+  throw lastErr;
+}
+
 const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
 });
@@ -187,8 +233,9 @@ server.addService(toolService.service, {
     }
 
     if (scanForPII(args)) {
-      logger.warn({ agent_id, execution_id, tool_name }, "PII detected in tool arguments — blocking");
-      return callback(new PIIViolationError("PII detected in tool arguments", { toolName: tool_name, detectedPatterns: ["SSN", "email"] }), null);
+      const patterns = detectedPIIPatterns(args);
+      logger.warn({ agent_id, execution_id, tool_name, patterns }, "PII detected in tool arguments — blocking");
+      return callback(new PIIViolationError("PII detected in tool arguments", { toolName: tool_name, detectedPatterns: patterns }), null);
     }
 
     try {
@@ -260,7 +307,7 @@ server.addService(toolService.service, {
         fetchOpts.body = JSON.stringify({ tool: tool_name, args });
       }
 
-      const response = await fetch(url, fetchOpts);
+      const response = await fetchWithRetry(url, fetchOpts);
       const body = response.ok ? await response.text() : `HTTP ${response.status}`;
 
       const latency = Date.now() - startTime;

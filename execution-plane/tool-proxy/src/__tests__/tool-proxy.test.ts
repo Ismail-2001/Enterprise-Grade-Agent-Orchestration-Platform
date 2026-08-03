@@ -86,5 +86,28 @@ describe("Tool Proxy - PII Detection", () => {
     it("should detect multiple PII types in same payload", () => {
       expect(scanForPII({ ssn: "123-45-6789", email: "a@b.com" })).toBe(true);
     });
+
+    it("should detect credit card numbers", () => {
+      expect(scanForPII({ card: "4111-1111-1111-1111" })).toBe(true);
+      expect(scanForPII({ card: "4242424242424242" })).toBe(true);
+    });
+
+    it("should detect US phone numbers", () => {
+      expect(scanForPII({ phone: "(555) 123-4567" })).toBe(true);
+      expect(scanForPII({ phone: "+1-555-123-4567" })).toBe(true);
+    });
+
+    it("should detect dates of birth", () => {
+      expect(scanForPII({ dob: "1990-04-12" })).toBe(true);
+      expect(scanForPII({ dob: "04/12/1985" })).toBe(true);
+    });
+
+    it("should detect IP addresses", () => {
+      expect(scanForPII({ ip: "192.168.1.10" })).toBe(true);
+    });
+
+    it("should not flag years that are not dates of birth", () => {
+      expect(scanForPII({ year: "2024" })).toBe(false);
+    });
   });
 });

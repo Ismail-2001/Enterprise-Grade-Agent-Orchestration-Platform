@@ -16,6 +16,7 @@ import Redis from "ioredis";
 import { Pool } from "pg";
 import { getServerCredentials } from "@e-gaop/shared";
 import { MemoryPlaneRepository } from "./repository";
+import { MemoryWriteQueue } from "./write-queue";
 
 function verifyServiceToken(req: http.IncomingMessage): boolean {
   const expectedToken = process.env.INTERNAL_SERVICE_TOKEN ?? "";
@@ -84,6 +85,13 @@ const pgPool = new Pool({
 });
 
 const memRepo = new MemoryPlaneRepository(pgPool);
+
+// Write-ahead log: durable writes are queued and retried instead of fire-and-forget.
+const memWriteQueue = new MemoryWriteQueue(memRepo, {
+  maxAttempts: parseInt(process.env.MEMORY_WAL_MAX_ATTEMPTS || "5", 10),
+  backoffBaseMs: parseInt(process.env.MEMORY_WAL_BACKOFF_MS || "500", 10),
+  maxQueueSize: parseInt(process.env.MEMORY_WAL_MAX_QUEUE || "10000", 10),
+});
 
 pgPool.on("error", (err) => logger.warn({ err: err.message }, "PostgreSQL connection issue"));
 
@@ -173,9 +181,14 @@ server.addService(memoryService.service, {
       // Fast path: write to Redis
       await redis.setex(redisKey, ttl, serialized);
 
-      // Durable path: write to PostgreSQL (fire-and-forget for non-critical path)
-      memRepo.set(namespace, agent_id, key, data as Record<string, unknown>, ttl)
-        .catch((pgErr) => logger.warn({ err: pgErr.message }, "PostgreSQL write failed"));
+      // Durable path: enqueue to write-ahead log with retry/backoff (no fire-and-forget)
+      memWriteQueue.enqueue({
+        namespace: safeNs,
+        agentId: safeAgent,
+        key: safeKey,
+        value: data as Record<string, unknown>,
+        ttlSeconds: ttl,
+      });
 
       try {
         createAuditEntry(
@@ -348,6 +361,7 @@ if (process.env.NODE_ENV !== "test") {
     server.tryShutdown(async () => {
       healthServer.close();
       redis.disconnect();
+      await memWriteQueue.dispose();
       await pgPool.end();
       await shutdownTracing();
       logger.info("Memory Plane shut down");
@@ -359,4 +373,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, redis, pgPool, memRepo };
+export { server, redis, pgPool, memRepo, memWriteQueue };

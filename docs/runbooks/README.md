@@ -9,6 +9,8 @@ Playbooks for every alert rule defined in Grafana. Each runbook covers:
 - **Verification** — how to confirm the issue is resolved
 - **Escalation** — who to contact if you can't fix it
 
+For everyday development and debugging of E-GAOP, see the [Developer Guide](../developer-guide.md).
+
 ## Alert rules
 
 | Alert | Severity | Runbook |

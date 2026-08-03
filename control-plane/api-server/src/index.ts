@@ -360,8 +360,10 @@ fastify.addHook("preHandler", async (request, reply) => {
   await authenticate(request, reply);
 });
 
+const API_VERSION = "v1";
+
 function apiResponse<T>(data: T) {
-  return { data, meta: { traceId: crypto.randomUUID(), timestamp: new Date().toISOString() } };
+  return { data, meta: { apiVersion: API_VERSION, traceId: crypto.randomUUID(), timestamp: new Date().toISOString() } };
 }
 
 function paginate<T>(items: T[], page: number, limit: number) {
@@ -821,10 +823,14 @@ fastify.post("/api/agents/:id/rollback", async (request, reply) => {
 
 // ── Namespaces REST ──
 
-fastify.get("/api/namespaces", async () => {
+fastify.get("/api/namespaces", async (request) => {
+  const q = request.query as Record<string, string>;
+  const page = parseInt(q.page ?? "1", 10);
+  const limit = parseInt(q.limit ?? "50", 10);
+
   return new Promise((resolve) => {
     namespaceHandlers.ListNamespaces(
-      { request: { page_size: 100 } } as any,
+      { request: { page_size: Math.min(Math.max(limit, 1), 100) } } as any,
       (_err: any, response: any) => {
         const ns = (response?.namespaces ?? []).map((n: any) => ({
           name: n.slug ?? "",
@@ -839,7 +845,7 @@ fastify.get("/api/namespaces", async () => {
             toolCallsPerMinute: n.quotas?.max_tool_calls_per_minute ?? 20,
           },
         }));
-        resolve(apiResponse(ns));
+        resolve(apiResponse(paginate(ns, page, limit)));
       }
     );
   });
