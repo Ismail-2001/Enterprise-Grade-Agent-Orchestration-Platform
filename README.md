@@ -9,7 +9,7 @@
 [![Node](https://img.shields.io/badge/node-24-339933?logo=node.js&logoColor=white)](.github/workflows/ci.yml)
 [![CI](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/ci.yml?branch=main&label=CI)](.github/workflows/ci.yml)
 [![Security Scan](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/security-scan.yml?branch=main&label=security%20scan)](.github/workflows/security-scan.yml)
-[![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen)](#quality-gates)
+[![Tests](https://img.shields.io/badge/tests-330%20passing-brightgreen)](#quality-gates)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen)](SECURITY.md)
 [![Readiness](https://img.shields.io/badge/production%20readiness-97%25-brightgreen)](#current-status)
 [![mTLS](https://img.shields.io/badge/mTLS-enabled-blue)](packages/shared/src/tls.ts)
@@ -39,7 +39,7 @@
 | **Engineering honesty** | Published production-readiness assessment with scored gaps. Not aspirational — every claim verified against running code. |
 | **AI/LLM depth** | Multi-model (OpenAI + Anthropic Claude + Ollama), 3-model fallback chain, circuit breaker, concurrency semaphore, dead-letter queue, agent versioning with rollback. |
 
-**Built by one engineer.** 15,000+ lines of TypeScript, 10 npm workspaces, 22 Docker services, 8 database migrations, 297 tests, 0 CVEs.
+**Built by one engineer.** 15,000+ lines of TypeScript, 10 npm workspaces, 22 Docker services, 8 database migrations, 330 tests, 0 CVEs.
 
 ---
 
@@ -245,7 +245,7 @@ Defense-in-depth spanning transport, application, data, and policy layers.
 | P95 OPA policy evaluation | **< 50ms** | 20 iterations |
 | P99 health check | **< 100ms** | Live stack, 10/25/50 concurrent |
 | LLM circuit breaker recovery | **30s** | opossum `resetTimeout` |
-| CI pipeline (local) | **7.1 min** | 10 workspaces, 297 tests |
+| CI pipeline (local) | **7.1 min** | 10 workspaces, 330 tests |
 
 ---
 
@@ -253,7 +253,7 @@ Defense-in-depth spanning transport, application, data, and policy layers.
 
 | Gate | Value | Method |
 |------|-------|--------|
-| Unit tests | **297 passing** | Jest, 10 workspaces |
+| Unit tests | **330 passing** | Jest, 10 workspaces |
 | TypeScript | **10/10 workspaces typecheck** | `tsc --noEmit` |
 | Lint | **0 errors** | ESLint 8 |
 | npm audit | **0 vulnerabilities** | 19 fixed (11 high, 8 moderate) |
@@ -358,7 +358,7 @@ Push/PR → CI (17/17 green) → Security Scan (14/14 green) → Deploy (dry-run
 
 | Workflow | Jobs | Key Checks |
 |----------|------|------------|
-| **CI** | 17+ | npm audit, lint, typecheck, build, 297 tests, Docker Compose validation, Helm lint + kubeconform |
+| **CI** | 17+ | npm audit, lint, typecheck, build, 330 tests, Docker Compose validation, Helm lint + kubeconform |
 | **Security Scan** | 14 | Gitleaks, CodeQL, npm audit, Trivy fs + image scan |
 | **Deploy** | 4 | Migration SQL, smoke tests, auto-rollback, Slack |
 | **Backup** | 1 | Daily 02:00 UTC, 30-day retention |

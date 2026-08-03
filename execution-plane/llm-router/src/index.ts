@@ -12,9 +12,10 @@ import https from "https";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
-import { get_encoding } from "tiktoken";
 import OpenAI from "openai";
 import CircuitBreaker from "opossum";
+import { countTokensForModel } from "./tokens.js";
+import { detectPromptInjection, scanMessagesForInjection } from "./prompt-injection.js";
 import { RateLimiter, extractNamespace, getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, AsyncSemaphore } from "@e-gaop/shared";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
@@ -169,6 +170,15 @@ interface CompletionUsage {
   total_tokens: number;
 }
 
+// A single token delta emitted by a streaming provider. `content` is empty on the
+// final chunk, which carries the aggregate `usage` and `finishReason`.
+interface StreamChunk {
+  content: string;
+  model: string;
+  usage?: CompletionUsage;
+  finishReason?: string;
+}
+
 // ─── OpenAI Client ────────────────────────────────────────────────────────
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -207,13 +217,7 @@ const ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || "https://api.anthro
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 
 function countTokens(text: string): number {
-  const enc = get_encoding("cl100k_base");
-  try {
-    const tokens = enc.encode(text);
-    return tokens.length;
-  } finally {
-    enc.free();
-  }
+  return countTokensForModel(text);
 }
 
 function calculateCost(promptTokens: number, completionTokens: number, model: string): string {
@@ -375,6 +379,206 @@ async function callOllama(
   };
 }
 
+// ─── Streaming Providers ───────────────────────────────────────────────────
+
+// Lazily parse a response body's line-delimited SSE/NDJSON payloads.
+async function* streamLines(body: ReadableStream | null): AsyncGenerator<string> {
+  if (!body) return;
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx = buffer.indexOf("\n");
+      while (idx >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (line) yield line;
+        idx = buffer.indexOf("\n");
+      }
+    }
+    const remainder = buffer.trim();
+    if (remainder) yield remainder;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function* streamOpenAIProvider(
+  openaiMessages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  if (!openai) {
+    throw new Error("OpenAI client not configured");
+  }
+  const openaiModel = MODEL_TO_OPENAI[model] ?? model;
+  const stream = await openai.chat.completions.create(
+    {
+      model: openaiModel,
+      messages: openaiMessages,
+      temperature,
+      max_tokens: Math.min((maxTokens || 4096), 16384),
+      stream: true,
+      stream_options: { include_usage: true },
+    },
+    { signal }
+  );
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices?.[0]?.delta?.content;
+    if (delta) {
+      yield { content: delta, model };
+    }
+    if (chunk.usage) {
+      yield {
+        content: "",
+        model,
+        usage: {
+          prompt_tokens: chunk.usage.prompt_tokens ?? 0,
+          completion_tokens: chunk.usage.completion_tokens ?? 0,
+          total_tokens: chunk.usage.total_tokens ?? 0,
+        },
+        finishReason: chunk.choices?.[0]?.finish_reason ?? "stop",
+      };
+    }
+  }
+}
+
+async function* streamAnthropic(
+  messages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  const apiKey = ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY not configured");
+  }
+
+  const systemMsg = messages.find((m: any) => m.role === "system");
+  const nonSystemMsgs = messages.filter((m: any) => m.role !== "system");
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: Math.min(maxTokens || 4096, 16384),
+    messages: nonSystemMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+    stream: true,
+  };
+  if (systemMsg) body.system = systemMsg.content;
+  if (temperature !== undefined) body.temperature = temperature;
+
+  const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+    signal: signal ?? AbortSignal.timeout(DEFAULT_LLM_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    const err: any = new Error(`Anthropic API error ${response.status}: ${errBody}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  let promptTokens = 0;
+  let completionTokens = 0;
+  for await (const line of streamLines(response.body)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      const evt = JSON.parse(payload) as any;
+      if (evt.type === "message_start") {
+        promptTokens = evt.message?.usage?.input_tokens ?? 0;
+      } else if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") {
+        yield { content: evt.delta.text ?? "", model };
+      } else if (evt.type === "message_delta") {
+        completionTokens = evt.usage?.output_tokens ?? 0;
+        yield {
+          content: "",
+          model,
+          usage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: promptTokens + completionTokens,
+          },
+          finishReason: evt.delta?.stop_reason ?? "stop",
+        };
+      }
+    } catch {
+      // Ignore malformed SSE frames
+    }
+  }
+}
+
+async function* streamOllama(
+  messages: any[],
+  model: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+    stream: true,
+    options: {
+      temperature,
+      num_predict: Math.min(maxTokens || 4096, 16384),
+    },
+  };
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: signal ?? AbortSignal.timeout(DEFAULT_LLM_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    const err: any = new Error(`Ollama API error ${response.status}: ${errBody}`);
+    err.status = response.status;
+    throw err;
+  }
+
+  for await (const line of streamLines(response.body)) {
+    if (!line) continue;
+    try {
+      const evt = JSON.parse(line) as any;
+      if (evt.message?.content) {
+        yield { content: evt.message.content, model };
+      }
+      if (evt.done) {
+        yield {
+          content: "",
+          model,
+          usage: {
+            prompt_tokens: evt.prompt_eval_count ?? 0,
+            completion_tokens: evt.eval_count ?? 0,
+            total_tokens: (evt.prompt_eval_count ?? 0) + (evt.eval_count ?? 0),
+          },
+          finishReason: "stop",
+        };
+      }
+    } catch {
+      // Ignore malformed NDJSON frames
+    }
+  }
+}
+
 // ─── Unified Multi-Model Fallback ─────────────────────────────────────────
 
 async function callOpenAIProvider(
@@ -506,6 +710,60 @@ async function callLLMWithFallback(
   throw new Error("All models in fallback chain exhausted");
 }
 
+async function* streamLLMWithFallback(
+  openaiMessages: any[],
+  preferredModel: string,
+  temperature: number,
+  maxTokens: number | undefined,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  const models = [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)];
+  let lastErr: Error | undefined;
+
+  for (const model of models) {
+    const provider = detectProvider(model);
+
+    try {
+      if (provider === "anthropic") {
+        for await (const chunk of streamAnthropic(openaiMessages, model, temperature, maxTokens, signal)) {
+          yield chunk;
+        }
+        return;
+      }
+
+      if (provider === "ollama") {
+        for await (const chunk of streamOllama(openaiMessages, model, temperature, maxTokens, signal)) {
+          yield chunk;
+        }
+        return;
+      }
+
+      // Default: OpenAI-compatible API
+      if (!openai) {
+        logger.warn({ model }, "OpenAI client not configured, skipping");
+        continue;
+      }
+
+      for await (const chunk of streamOpenAIProvider(openaiMessages, model, temperature, maxTokens, signal)) {
+        yield chunk;
+      }
+      return;
+    } catch (err: any) {
+      lastErr = err;
+      const status = err.status || err.statusCode || 0;
+      if (status === 400 || status === 422) {
+        throw new LLM400Error(`LLM bad request: ${err.message}`, { statusCode: status, model });
+      }
+      if (status === 401 || status === 403) {
+        throw new LLMAuthError(`LLM auth failed: ${err.message}`, { model });
+      }
+      logger.warn({ model, provider, err: err.message }, "Streaming provider failed, trying fallback model");
+    }
+  }
+
+  throw lastErr ?? new Error("All models in fallback chain exhausted");
+}
+
 const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
 });
@@ -546,6 +804,28 @@ server.addService(llmService.service, {
         });
       }
       acquired = true;
+
+      // Prompt injection scan — reject critical/high payloads before hitting upstream providers
+      const injectionScan = scanMessagesForInjection(messages || []);
+      if (injectionScan.detected) {
+        const worst = injectionScan.worst;
+        const reject = worst.severity === "critical" || worst.severity === "high";
+        const scanResult = {
+          detected: true,
+          severity: worst.severity,
+          confidence: worst.confidence,
+          indicators: worst.indicators,
+          violations: injectionScan.violations.length,
+        };
+        if (reject) {
+          logger.warn({ agent_id, execution_id, scanResult }, "Prompt injection detected — request blocked");
+          throw Object.assign(new Error("PROMPT_INJECTION_DETECTED"), {
+            grpcStatus: grpc.status.INVALID_ARGUMENT,
+            scanResult,
+          });
+        }
+        logger.warn({ agent_id, execution_id, scanResult }, "Prompt injection indicators found — proceeding with low risk");
+      }
 
       // Map messages to OpenAI format, preserving tool_calls on assistant messages
       const openaiMessages = (messages || []).map((m: any) => {
@@ -629,13 +909,176 @@ server.addService(llmService.service, {
         body: err.body ? JSON.stringify(err.body).slice(0, 2000) : undefined,
       }, "LLM generation failed");
 
-      const code = err.name === "AbortError"
-        ? grpc.status.DEADLINE_EXCEEDED
-        : grpc.status.INTERNAL;
+      const code = err.grpcStatus
+        ? err.grpcStatus
+        : err.name === "AbortError"
+          ? grpc.status.DEADLINE_EXCEEDED
+          : grpc.status.INTERNAL;
 
       callback({
         code,
-        message: "LLM generation failed",
+        message: err.grpcStatus ? err.message : "LLM generation failed",
+        details: err.scanResult ? JSON.stringify(err.scanResult) : undefined,
+      });
+    } finally {
+      if (acquired) concurrency.release();
+    }
+  },
+
+  GenerateStream: async (call: any) => {
+    const { agent_id, execution_id, model: preferredModel, messages, temperature, max_tokens } = call.request;
+    const startTime = Date.now();
+
+    logger.info({ agent_id, execution_id, preferredModel }, "Processing streaming LLM request...");
+
+    if (!OPENAI_API_KEY) {
+      call.emit("error", {
+        code: grpc.status.FAILED_PRECONDITION,
+        message: "OPENAI_API_KEY not configured. Set environment variable before routing LLM calls.",
+      });
+      return;
+    }
+
+    const rateKey = `${extractNamespace(agent_id)}:${agent_id}`;
+    const { allowed, retryAfterMs } = rateLimiter.check(rateKey);
+    if (!allowed) {
+      logger.warn({ agent_id, execution_id, retryAfterMs, rateKey }, "LLM rate limit hit");
+      call.emit("error", {
+        code: grpc.status.RESOURCE_EXHAUSTED,
+        message: `Rate limit exceeded. Retry after ${Math.ceil(retryAfterMs / 1000)}s.`,
+      });
+      return;
+    }
+
+    let acquired = false;
+    try {
+      const slotAcquired = await concurrency.acquire(25000);
+      if (!slotAcquired) {
+        logger.warn({ agent_id, execution_id }, "Concurrency slot timeout — all slots busy");
+        call.emit("error", {
+          code: grpc.status.DEADLINE_EXCEEDED,
+          message: "Too many concurrent LLM requests, please retry later",
+        });
+        return;
+      }
+      acquired = true;
+
+      // Prompt injection scan — reject critical/high payloads before streaming to upstream
+      const injectionScan = scanMessagesForInjection(messages || []);
+      if (injectionScan.detected) {
+        const worst = injectionScan.worst;
+        const reject = worst.severity === "critical" || worst.severity === "high";
+        const scanResult = {
+          detected: true,
+          severity: worst.severity,
+          confidence: worst.confidence,
+          indicators: worst.indicators,
+          violations: injectionScan.violations.length,
+        };
+        if (reject) {
+          logger.warn({ agent_id, execution_id, scanResult }, "Prompt injection detected — stream blocked");
+          call.emit("error", {
+            code: grpc.status.INVALID_ARGUMENT,
+            message: "PROMPT_INJECTION_DETECTED",
+            details: JSON.stringify(scanResult),
+          });
+          return;
+        }
+        logger.warn({ agent_id, execution_id, scanResult }, "Prompt injection indicators found — proceeding with low risk");
+      }
+
+      // Map messages to OpenAI format, preserving tool_calls on assistant messages
+      const openaiMessages = (messages || []).map((m: any) => {
+        const base: any = {
+          role: m.role as "system" | "user" | "assistant" | "tool",
+          content: m.content,
+        };
+        if (m.tool_call_id) {
+          base.tool_call_id = m.tool_call_id;
+        }
+        if (m.name) {
+          base.name = m.name;
+        }
+        if (m.tool_calls && m.tool_calls.length > 0) {
+          base.tool_calls = m.tool_calls.map((tc: any) => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.name,
+              arguments: typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args || {}),
+            },
+          }));
+        }
+        return base;
+      });
+
+      const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10);
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), timeoutMs);
+
+      try {
+        let finalUsage: CompletionUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        let finalModel = preferredModel || "gpt-4o";
+        let finishReason = "stop";
+
+        const stream = streamLLMWithFallback(
+          openaiMessages,
+          finalModel,
+          temperature ?? 0.7,
+          max_tokens ?? undefined,
+          abort.signal
+        );
+
+        for await (const chunk of stream) {
+          if (chunk.content) {
+            call.write({ content: chunk.content, done: false, model_used: chunk.model });
+          }
+          if (chunk.usage) {
+            finalUsage = chunk.usage;
+            finishReason = chunk.finishReason ?? "stop";
+          }
+          finalModel = chunk.model;
+        }
+        clearTimeout(timer);
+
+        const cost = calculateCost(finalUsage.prompt_tokens, finalUsage.completion_tokens, finalModel);
+        logger.info({
+          agent_id,
+          model: finalModel,
+          promptTokens: finalUsage.prompt_tokens,
+          completionTokens: finalUsage.completion_tokens,
+          cost,
+          latency_ms: Date.now() - startTime,
+        }, "Streaming generation completed successfully.");
+
+        call.write({
+          content: "",
+          done: true,
+          model_used: finalModel,
+          usage: finalUsage,
+          cost,
+          finish_reason: finishReason,
+        });
+        call.end();
+      } catch (err: any) {
+        clearTimeout(timer);
+        logger.error({
+          agent_id,
+          execution_id,
+          err: err.message,
+          status: err.status,
+        }, "LLM streaming failed");
+
+        call.emit("error", {
+          code: err.name === "AbortError" ? grpc.status.DEADLINE_EXCEEDED : grpc.status.INTERNAL,
+          message: "LLM streaming failed",
+        });
+      }
+    } catch (err: any) {
+      logger.error({ agent_id, execution_id, err: err.message }, "LLM streaming setup failed");
+      call.emit("error", {
+        code: grpc.status.INTERNAL,
+        message: "LLM streaming failed",
       });
     } finally {
       if (acquired) concurrency.release();
@@ -702,4 +1145,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, PRICING, countTokens, calculateCost, RateLimiter, rateLimiter, detectProvider, ANTHROPIC_API_KEY, OLLAMA_BASE_URL };
+export { server, PRICING, countTokens, countTokensForModel, calculateCost, RateLimiter, rateLimiter, detectProvider, detectPromptInjection, scanMessagesForInjection, streamOpenAIProvider, streamAnthropic, streamOllama, streamLLMWithFallback, ANTHROPIC_API_KEY, OLLAMA_BASE_URL };

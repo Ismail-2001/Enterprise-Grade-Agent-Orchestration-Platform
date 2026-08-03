@@ -4,6 +4,24 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **Per-model tokenizers** in the LLM router: model-aware token counting dispatches between `o200k_base` (gpt-4o/o-series) and `cl100k_base` (gpt-3.5/4, Anthropic Claude, Ollama heuristics); `countTokensForModel(text, model)` exported with backward-compatible `countTokens(text)`.
+- **LLM streaming** (`GenerateStream` server-streaming RPC in `egaop.v1.LLMService`): token-delta streaming for OpenAI (SDK stream + usage), Anthropic (SSE), and Ollama (NDJSON); final chunk carries aggregate usage/cost/finish-reason; multi-model fallback chain preserved.
+- **Prompt injection detection** in the LLM router: heuristic scanner (`detectPromptInjection`/`scanMessagesForInjection`) flags instruction-override, system-prompt exfiltration, jailbreak, secret/tool exfiltration, role-reassignment; critical/high payloads are rejected with `INVALID_ARGUMENT` + scan details before any upstream call; low-risk indicators log a warning.
+
+### Security
+
+- Prompt injection gate applied to both `Generate` and `GenerateStream` handlers (Phase 3 #24).
+
+### Tests
+
+- Added 33 unit tests (tokenizers, prompt injection, streaming) — llm-router suite now 42 tests; added `.js`→`.ts` moduleNameMapper to llm-router + tests jest configs for NodeNext resolution.
+
+### Changed
+
+- FAANG audit re-scored to **7.30/10** (LLM Integration 9/10); all 8 Phase 3 (Medium) items now complete.
+
 ## [1.0.0] - 2026-08-03
 
 ### Security (Critical / High remediation)

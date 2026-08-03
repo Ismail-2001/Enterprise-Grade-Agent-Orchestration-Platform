@@ -10,6 +10,8 @@ option go_package = "github.com/egaop/egaop/api/generated/go/egaop/v1";
 // LLM Router Service
 service LLMService {
   rpc Generate (GenerateRequest) returns (GenerateResponse);
+  // Server-streaming: yields incremental content deltas, then a final `done` chunk with usage/cost.
+  rpc GenerateStream (GenerateRequest) returns (stream GenerateStreamChunk);
 }
 
 message ToolDefinition {
@@ -57,6 +59,16 @@ message TokenUsage {
   int32 prompt_tokens = 1;
   int32 completion_tokens = 2;
   int32 total_tokens = 3;
+}
+
+// Single delta emitted by the server-streaming GenerateStream RPC.
+message GenerateStreamChunk {
+  string content = 1;      // incremental text delta (empty on the final chunk)
+  bool done = 2;           // true only on the final chunk
+  string model_used = 3;   // actual model that served the stream
+  TokenUsage usage = 4;    // populated on the final chunk
+  string cost = 5;         // populated on the final chunk (USD, string)
+  string finish_reason = 6; // populated on the final chunk
 }
 
 // LLMRoutingPolicy resource definition

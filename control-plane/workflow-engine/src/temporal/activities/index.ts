@@ -264,6 +264,118 @@ export async function callLLM(params: CallLLMParams): Promise<LLMResponse> {
   }
 }
 
+// ─── Activity: callLLMStream ───────────────────────────────────────────────
+
+export interface LLMStreamChunk {
+  content: string;
+  done: boolean;
+  modelUsed: string;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  cost?: string;
+  finishReason?: string;
+}
+
+/**
+ * Streams incremental LLM output via the router's server-streaming GenerateStream RPC.
+ * The caller must consume the returned async iterator; the final chunk carries
+ * aggregate usage/cost and `done === true`.
+ */
+export async function* callLLMStream(params: CallLLMParams): AsyncGenerator<LLMStreamChunk, void, unknown> {
+  const clientMethods = llmClient as unknown as Record<string, Function | undefined>;
+  const grpcMethod = clientMethods["GenerateStream"];
+  if (!grpcMethod) {
+    throw new Error("gRPC method GenerateStream not found");
+  }
+
+  const messagesProto = params.messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    tool_call_id: m.toolCallId ?? "",
+    tool_calls: m.toolCalls ?? [],
+  }));
+
+  const request = {
+    agent_id: params.agentId,
+    execution_id: params.executionId,
+    namespace: params.namespace,
+    messages: messagesProto,
+    temperature: 0.7,
+    model: params.model ?? "",
+  };
+
+  const queue: Array<LLMStreamChunk | Error> = [];
+  let pushResolve: (() => void) | null = null;
+  let closed = false;
+  let error: grpc.ServiceError | null = null;
+
+  const wake = () => {
+    const res = pushResolve;
+    pushResolve = null;
+    res?.();
+  };
+
+  const call = grpcMethod.call(
+    llmClient,
+    request,
+    {},
+    (err: grpc.ServiceError | null) => {
+      if (err) {
+        error = err;
+        closed = true;
+        wake();
+      }
+    }
+  );
+
+  if (call && typeof call.on === "function") {
+    call.on("data", (chunk: any) => {
+      queue.push({
+        content: chunk.content ?? "",
+        done: !!chunk.done,
+        modelUsed: chunk.model_used ?? "unknown",
+        usage: chunk.usage
+          ? {
+              prompt_tokens: chunk.usage.prompt_tokens ?? 0,
+              completion_tokens: chunk.usage.completion_tokens ?? 0,
+              total_tokens: chunk.usage.total_tokens ?? 0,
+            }
+          : undefined,
+        cost: chunk.cost,
+        finishReason: chunk.finish_reason,
+      });
+      wake();
+    });
+    call.on("error", (err: grpc.ServiceError) => {
+      error = err;
+      closed = true;
+      wake();
+    });
+    call.on("end", () => {
+      closed = true;
+      wake();
+    });
+  } else {
+    closed = true;
+  }
+
+  try {
+    for (;;) {
+      const item = queue.shift();
+      if (item !== undefined) {
+        if (item instanceof Error) throw item;
+        yield item;
+        if (item.done) return;
+        continue;
+      }
+      if (error) throw error;
+      if (closed) return;
+      await new Promise<void>((res) => { pushResolve = res; });
+    }
+  } finally {
+    try { call?.cancel?.(); } catch { /* ignore */ }
+  }
+}
+
 // ─── Activity: executeTool ─────────────────────────────────────────────────
 
 interface ExecuteToolParams {
