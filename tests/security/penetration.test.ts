@@ -133,10 +133,11 @@ describe("Security: Path Traversal Prevention", () => {
     it(`should reject path traversal: ${payload.slice(0, 40)}...`, () => {
       // Verify that the payload attempts to escape the working directory
       const hasTraversal = /\.\.[\/\\]/.test(payload) || /%2e%2e/i.test(payload);
+      const hasDoubleEncodedTraversal = /%25(?:2e|2f|5c)/i.test(payload) || /\.\.[%]?2f/i.test(payload);
       const hasAbsolute = /^\/[a-z]/i.test(payload) || /^[A-Z]:\\/i.test(payload);
       const hasNullByte = /%00/.test(payload);
 
-      expect(hasTraversal || hasAbsolute || hasNullByte).toBe(true);
+      expect(hasTraversal || hasDoubleEncodedTraversal || hasAbsolute || hasNullByte).toBe(true);
     });
   }
 });
@@ -182,10 +183,24 @@ describe("Security: Authentication Bypass Attempts", () => {
       "eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.",
     ];
 
-    for (const token of malformedTokens) {
+    const isWellFormedJwt = (token: string): boolean => {
+      if (typeof token !== "string" || token.length === 0) return false;
       const parts = token.split(".");
-      // Valid JWT has exactly 3 parts
-      expect(parts.length).not.toBe(3);
+      if (parts.length !== 3) return false;
+      if (parts.some((p) => p.length === 0)) return false;
+      try {
+        const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+        const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+        if (typeof header !== "object" || header === null || typeof (header as any).alg !== "string") return false;
+        if (typeof payload !== "object" || payload === null) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    for (const token of malformedTokens) {
+      expect(isWellFormedJwt(token)).toBe(false);
     }
   });
 
@@ -269,7 +284,13 @@ describe("Security: Prototype Pollution Prevention", () => {
 
   it("should not allow constructor injection", () => {
     const malicious = JSON.parse('{"constructor": {"prototype": {"admin": true}}}');
-    expect((malicious.constructor as any)?.prototype?.admin).toBeUndefined();
+    const clean: Record<string, unknown> = {};
+    Object.assign(clean, malicious);
+
+    // constructor/prototype keys must not pollute the shared prototypes
+    expect(({} as any).admin).toBeUndefined();
+    expect((Object.prototype as any).admin).toBeUndefined();
+    expect((Function.prototype as any).admin).toBeUndefined();
   });
 });
 

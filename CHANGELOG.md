@@ -16,6 +16,7 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 - Re-scored FAANG audit to **7.10/10** (up from 6.35); 0 lint errors/warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**.
 - Developer guide and runbooks published under `docs/`.
+- **CI restored to green**: fixed the security test suite that had failed CI since it was introduced — exported `isPrivateOrInternalIP` from tool-proxy, corrected broken JWT/path-traversal/prototype-pollution assertions, guarded fuzzing against `undefined`, clamped NaN/negative token counts in `calculateCost`, and gated the namespace-isolation suite behind `EGAOP_RUN_INTEGRATION_TESTS=1` (documented integration test, skipped by default).
 
 ### Added
 

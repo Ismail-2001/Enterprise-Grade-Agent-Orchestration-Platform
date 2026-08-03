@@ -90,7 +90,8 @@ describe("Fuzzing: Input Validation", () => {
     for (const id of fuzzAgentIds) {
       it(`should reject malicious agent ID: "${id.slice(0, 30)}..."`, () => {
         // Agent IDs should only contain alphanumeric, hyphens, underscores
-        const isValid = /^[a-zA-Z0-9_-]+$/.test(id);
+        // and be bounded in length (1-128 chars)
+        const isValid = /^[a-zA-Z0-9_-]{1,128}$/.test(id);
         expect(isValid).toBe(false);
       });
     }
@@ -116,7 +117,8 @@ describe("Fuzzing: Input Validation", () => {
     for (const ns of fuzzNamespaces) {
       it(`should reject malicious namespace: "${ns.slice(0, 30)}..."`, () => {
         // Namespaces should only contain alphanumeric, hyphens, underscores, dots
-        const isValid = /^[a-zA-Z0-9._-]+$/.test(ns) && ns.length > 0 && ns.length <= 128;
+        // and be bounded in length (1-128 chars)
+        const isValid = /^[a-zA-Z0-9._-]{1,128}$/.test(ns);
         expect(isValid).toBe(false);
       });
     }
@@ -145,7 +147,8 @@ describe("Fuzzing: gRPC Message Validation", () => {
   ];
 
   for (const msg of malformedMessages) {
-    it(`should handle malformed gRPC message: ${JSON.stringify(msg).slice(0, 50)}...`, () => {
+    const label = JSON.stringify(msg) ?? "undefined";
+    it(`should handle malformed gRPC message: ${label.slice(0, 50)}...`, () => {
       // Should not crash when processing malformed input
       if (msg && typeof msg === "object") {
         expect(typeof msg).toBe("object");

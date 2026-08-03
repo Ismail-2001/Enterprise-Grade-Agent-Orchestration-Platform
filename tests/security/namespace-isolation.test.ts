@@ -4,11 +4,19 @@
  * Verifies that tenants in different namespaces cannot access each other's
  * agents, executions, memory, or tool calls. This is the core multi-tenancy
  * guarantee of the platform.
+ *
+ * INTEGRATION SUITE — requires a running full stack (gRPC services on
+ * localhost). Skipped by default; enable with:
+ *   EGAOP_RUN_INTEGRATION_TESTS=1 npx jest --config tests/jest.config.ts --selectProjects security
+ * Individual endpoints are configurable via EGAOP_*_GRPC_ADDR env vars.
  */
 
 import path from "path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+
+const RUN_INTEGRATION = process.env.EGAOP_RUN_INTEGRATION_TESTS === "1";
+const describeIntegration = RUN_INTEGRATION ? describe : describe.skip;
 
 const PROTO_DIR = path.resolve(__dirname, "../../api/proto");
 
@@ -79,13 +87,16 @@ function promisifyCall(client: any, method: string, request: any, metadata: grpc
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
-const GRPC_ADDRESS = process.env.GRPC_ADDRESS || "localhost:50051";
+const API_GRPC_ADDRESS = process.env.EGAOP_API_GRPC_ADDR || "localhost:50051";
+const TOOL_GRPC_ADDRESS = process.env.EGAOP_TOOL_GRPC_ADDR || "localhost:50052";
+const RUNTIME_GRPC_ADDRESS = process.env.EGAOP_RUNTIME_GRPC_ADDR || "localhost:50054";
+const MEMORY_GRPC_ADDRESS = process.env.EGAOP_MEMORY_GRPC_ADDR || "localhost:50055";
 
-describe("Namespace Isolation: Agent CRUD", () => {
+describeIntegration("Namespace Isolation: Agent CRUD", () => {
   let agentClient: any;
 
   beforeAll(() => {
-    agentClient = createServiceClient(GRPC_ADDRESS);
+    agentClient = createServiceClient(API_GRPC_ADDRESS);
   });
 
   afterAll(() => {
@@ -184,11 +195,11 @@ describe("Namespace Isolation: Agent CRUD", () => {
   });
 });
 
-describe("Namespace Isolation: Memory Plane", () => {
+describeIntegration("Namespace Isolation: Memory Plane", () => {
   let memoryClient: any;
 
   beforeAll(() => {
-    memoryClient = createMemoryClient(GRPC_ADDRESS);
+    memoryClient = createMemoryClient(MEMORY_GRPC_ADDRESS);
   });
 
   afterAll(() => {
@@ -255,11 +266,11 @@ describe("Namespace Isolation: Memory Plane", () => {
   });
 });
 
-describe("Namespace Isolation: Sandbox Runtime", () => {
+describeIntegration("Namespace Isolation: Sandbox Runtime", () => {
   let runtimeClient: any;
 
   beforeAll(() => {
-    runtimeClient = createRuntimeClient(GRPC_ADDRESS);
+    runtimeClient = createRuntimeClient(RUNTIME_GRPC_ADDRESS);
   });
 
   afterAll(() => {
@@ -305,11 +316,11 @@ describe("Namespace Isolation: Sandbox Runtime", () => {
   });
 });
 
-describe("Namespace Isolation: Tool Proxy", () => {
+describeIntegration("Namespace Isolation: Tool Proxy", () => {
   let toolClient: any;
 
   beforeAll(() => {
-    toolClient = createToolClient(GRPC_ADDRESS);
+    toolClient = createToolClient(TOOL_GRPC_ADDRESS);
   });
 
   afterAll(() => {
@@ -353,11 +364,11 @@ describe("Namespace Isolation: Tool Proxy", () => {
   });
 });
 
-describe("Namespace Isolation: Namespace API", () => {
+describeIntegration("Namespace Isolation: Namespace API", () => {
   let namespaceClient: any;
 
   beforeAll(() => {
-    namespaceClient = createNamespaceClient(GRPC_ADDRESS);
+    namespaceClient = createNamespaceClient(API_GRPC_ADDRESS);
   });
 
   afterAll(() => {
@@ -402,7 +413,7 @@ describe("Namespace Isolation: Namespace API", () => {
     const promises = [];
     for (let i = 0; i < 12; i++) {
       promises.push(
-        promisifyCall(createServiceClient(GRPC_ADDRESS), "CreateAgent", {
+        promisifyCall(createServiceClient(API_GRPC_ADDRESS), "CreateAgent", {
           metadata: { name: `agent-beta-${i}`, namespace: "team-beta" },
           spec: { model: "gpt-4o-mini" },
           api_version: "egaop.io/v1",
@@ -420,9 +431,9 @@ describe("Namespace Isolation: Namespace API", () => {
   });
 });
 
-describe("Namespace Isolation: Cross-namespace data leakage", () => {
+describeIntegration("Namespace Isolation: Cross-namespace data leakage", () => {
   it("should NOT leak agent names across namespaces in search", async () => {
-    const agentClient = createServiceClient(GRPC_ADDRESS);
+    const agentClient = createServiceClient(API_GRPC_ADDRESS);
 
     // Alpha should only see its own agents
     const alphaMeta = createMetadata("team-alpha");
@@ -452,7 +463,7 @@ describe("Namespace Isolation: Cross-namespace data leakage", () => {
   });
 
   it("should NOT allow namespace injection via metadata manipulation", async () => {
-    const agentClient = createServiceClient(GRPC_ADDRESS);
+    const agentClient = createServiceClient(API_GRPC_ADDRESS);
 
     // Attacker tries to create agent in team-alpha by sending conflicting namespace
     // in both metadata and request body
@@ -476,7 +487,7 @@ describe("Namespace Isolation: Cross-namespace data leakage", () => {
   });
 });
 
-describe("Namespace Isolation: Observability isolation", () => {
+describeIntegration("Namespace Isolation: Observability isolation", () => {
   it("should NOT allow cross-namespace trace access", async () => {
     // This test verifies that traces from one namespace are not visible to another
     // The observability plane stores spans with namespace tags
@@ -484,7 +495,7 @@ describe("Namespace Isolation: Observability isolation", () => {
 
     // Try to query traces for an execution that belongs to team-alpha
     // Should return empty or not found
-    const runtimeClient = createRuntimeClient(GRPC_ADDRESS);
+    const runtimeClient = createRuntimeClient(RUNTIME_GRPC_ADDRESS);
     try {
       const response = await promisifyCall(runtimeClient, "GetSandboxStatus", {
         sandbox_id: "egaop-agent-exec-alpha-test",
@@ -500,9 +511,9 @@ describe("Namespace Isolation: Observability isolation", () => {
   });
 });
 
-describe("Namespace Isolation: Cleanup", () => {
+describeIntegration("Namespace Isolation: Cleanup", () => {
   it("should clean up test resources", async () => {
-    const agentClient = createServiceClient(GRPC_ADDRESS);
+    const agentClient = createServiceClient(API_GRPC_ADDRESS);
     const alphaMeta = createMetadata("team-alpha");
     const betaMeta = createMetadata("team-beta");
 

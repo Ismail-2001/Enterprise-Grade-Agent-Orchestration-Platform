@@ -110,6 +110,7 @@ Sandbox runtime specifics (`execution-plane/sandbox-runtime`):
   ```bash
   npx jest --config tests/jest.config.ts --selectProjects security --forceExit
   ```
+- **Namespace isolation (integration)** — `tests/security/namespace-isolation.test.ts` needs a running full stack (gRPC on 50051/50052/50054/50055) and is skipped by default. Enable with `EGAOP_RUN_INTEGRATION_TESTS=1`; per-service addresses are overridable via `EGAOP_*_GRPC_ADDR` env vars.
 - **PII detection** — `execution-plane/tool-proxy` exports `scanForPII`; patterns cover SSN, email, credit cards, US/international phones, DOB, IP. Extend `PII_PATTERNS` (not ad-hoc regexes) in `execution-plane/tool-proxy/src/index.ts`.
 - **Retry policy** — `fetchWithRetry` in tool-proxy retries 5xx and network errors with exponential backoff (3 attempts); `AbortError` is never retried.
 

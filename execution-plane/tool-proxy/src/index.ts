@@ -399,4 +399,4 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, scanForPII, RateLimiter };
+export { server, scanForPII, RateLimiter, isPrivateIP as isPrivateOrInternalIP };

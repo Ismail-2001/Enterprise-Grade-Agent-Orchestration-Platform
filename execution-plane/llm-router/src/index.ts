@@ -218,7 +218,9 @@ function countTokens(text: string): number {
 
 function calculateCost(promptTokens: number, completionTokens: number, model: string): string {
   const pricing = PRICING[model] ?? { input: 0.0025, output: 0.01 };
-  const cost = ((promptTokens / 1000) * pricing.input + (completionTokens / 1000) * pricing.output).toFixed(6);
+  const safePrompt = Number.isFinite(promptTokens) && promptTokens > 0 ? promptTokens : 0;
+  const safeCompletion = Number.isFinite(completionTokens) && completionTokens > 0 ? completionTokens : 0;
+  const cost = ((safePrompt / 1000) * pricing.input + (safeCompletion / 1000) * pricing.output).toFixed(6);
   return `$${cost}`;
 }
 
