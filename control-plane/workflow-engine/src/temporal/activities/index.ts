@@ -1,7 +1,6 @@
 import { Context } from "@temporalio/activity";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import fs from "fs";
 import http from "http";
 import path from "path";
 import { QuotaEnforcer, getClientCredentials, getStandardInterceptors, QuotaExceededError, createAuditEntry } from "@e-gaop/shared";

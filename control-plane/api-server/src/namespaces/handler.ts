@@ -11,10 +11,6 @@ const logger = pino({
 
 const repo = new NamespaceRepository();
 
-function nowSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
 function toTimestamp(date: Date): { seconds: number; nanos: number } {
   return {
     seconds: Math.floor(date.getTime() / 1000),

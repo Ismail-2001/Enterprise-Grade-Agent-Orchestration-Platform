@@ -8,7 +8,6 @@ if (process.env.NODE_ENV !== "test") {
 
 import path from "path";
 import http from "http";
-import fs from "fs";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";

@@ -160,7 +160,7 @@ describe("PolicyPlaneService", () => {
 
   describe("Circuit breaker", () => {
     it("should open circuit after threshold failures and deny without calling OPA", async () => {
-      const scope = nock(OPA_HOST)
+      nock(OPA_HOST)
         .post(`/v1/data/${POLICY_PATH}`)
         .times(5)
         .replyWithError("ECONNREFUSED");

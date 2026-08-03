@@ -241,7 +241,6 @@ export async function ensureAdminUser(repo: UserRepository): Promise<string | nu
 
   // Generate a random 16-char password with uppercase, lowercase, digits, and symbols
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-  const salt = crypto.randomBytes(16);
   let password = "";
   for (let i = 0; i < 16; i++) {
     password += chars[crypto.randomInt(chars.length)];

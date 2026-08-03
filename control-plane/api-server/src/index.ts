@@ -18,7 +18,7 @@ import cookie from "@fastify/cookie";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import pino from "pino";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocket } from "ws";
 import { Connection, Client } from "@temporalio/client";
 import { getServerCredentials } from "@e-gaop/shared";
 import { namespaceHandlers } from "./namespaces/handler";
@@ -444,7 +444,7 @@ fastify.get("/api/agents/:id", async (request, reply) => {
 
 // ── Agent Executions ──
 
-fastify.get("/api/agents/:id/executions", async (request, reply) => {
+fastify.get("/api/agents/:id/executions", async (request) => {
   const { id } = request.params as { id: string };
   const q = request.query as Record<string, string>;
   const page = parseInt(q.page ?? "1", 10);
@@ -463,12 +463,6 @@ fastify.get("/api/agents/:id/executions", async (request, reply) => {
     const executions: Array<Record<string, unknown>> = [];
 
     for await (const workflow of iterator) {
-      // Extract agent ID from workflow args (first arg contains agentId)
-      const raw = (workflow as any).raw as Record<string, unknown> | undefined;
-      const args = (raw?.executionInfo as any)?.type?.name === "reactWorkflow"
-        ? (raw as any)?.memo?.payloads
-        : undefined;
-
       // Filter by agent ID — check if this workflow's ID contains the agent name
       if (!workflow.workflowId.includes(id)) continue;
 
@@ -668,7 +662,7 @@ fastify.get("/api/executions/:id/history", async (request, reply) => {
 
 fastify.post("/api/agents", async (request, reply) => {
   const body = request.body as any;
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     agentHandlers.CreateAgent(
       {
         request: {
@@ -716,7 +710,7 @@ fastify.delete("/api/agents/:id", async (request, reply) => {
 
 // ── Agent Version History ──
 
-fastify.get("/api/agents/:id/versions", async (request, reply) => {
+fastify.get("/api/agents/:id/versions", async (request) => {
   const { id } = request.params as { id: string };
   const q = request.query as Record<string, string>;
   const namespace = q.namespace ?? "default";
@@ -779,7 +773,6 @@ fastify.get("/api/agents/:id/versions/:version", async (request, reply) => {
       changeSummary: versionData.change_summary,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
     reply.code(500);
     return { error: { message: "Failed to get version", code: "INTERNAL" } };
   }
@@ -953,7 +946,6 @@ fastify.get("/api/traces/:traceId", async (request, reply) => {
       ],
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
     reply.code(500);
     return { error: { message: "Failed to get trace", code: "INTERNAL" } };
   }
@@ -969,7 +961,6 @@ fastify.get("/api/metrics", async () => {
     const now = Date.now();
     const oneDayAgo = now - 24 * 60 * 60 * 1000;
     let running = 0;
-    let completed = 0;
     let failed = 0;
     let total = 0;
     let recentCount = 0;
@@ -979,7 +970,6 @@ fastify.get("/api/metrics", async () => {
     for await (const info of iterable) {
       total++;
       if (info.status.name === "RUNNING") running++;
-      else if (info.status.name === "COMPLETED") completed++;
       else if (info.status.name === "FAILED") failed++;
 
       if (info.startTime.getTime() > oneDayAgo) {

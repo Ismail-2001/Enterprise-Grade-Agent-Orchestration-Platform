@@ -6,7 +6,6 @@ import { hashPassword, comparePassword, signJWT, verifyJWT, createAuditEntry, ty
 import {
   getUserRepository,
   ensureAdminUser,
-  type UserRow,
 } from "./repository";
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
@@ -280,7 +279,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           "auth.failed_login",
           "warn",
           { type: "user", id: user.id, authMethod: "jwt" },
-          { name: "login", result: "denied", reason: "invalid password" },
+          { name: "login", result: "denied", reason: "invalid password", parameters: { lockout: locked } },
           { type: "user", id: user.id },
           { ipAddress: request.ip, userAgent: request.headers["user-agent"] },
         );

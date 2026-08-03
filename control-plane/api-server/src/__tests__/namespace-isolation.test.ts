@@ -29,7 +29,6 @@ import {
   DEFAULT_QUOTAS,
   CreateNamespaceSchema,
   type Namespace,
-  type NamespaceTierValue,
 } from "@e-gaop/shared";
 import {
   NamespaceNotFoundError,
@@ -50,7 +49,6 @@ import {
   resetAgentRepository,
 } from "../agents/repository";
 import {
-  createNamespaceEnforcementInterceptor,
   clearNamespaceCache,
   updateNamespaceCache,
 } from "@e-gaop/shared";
@@ -772,7 +770,7 @@ describe("Agent CRUD completeness", () => {
   });
 
   it("DeleteAgent soft deletes", async () => {
-    const createResponse = await callAgentHandler<Record<string, unknown>>(
+    await callAgentHandler<Record<string, unknown>>(
       agentHandlers.CreateAgent,
       {
         metadata: { name: "delete-agent", namespace: "delete-ns" },

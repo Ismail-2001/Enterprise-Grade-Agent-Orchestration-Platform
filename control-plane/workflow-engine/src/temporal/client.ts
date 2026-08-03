@@ -12,7 +12,6 @@ import type {
   WorkflowStatus,
   ApprovalDecision,
   HITLApprovalInput,
-  HITLResult,
 } from "./types";
 
 // ─── Singleton State ───────────────────────────────────────────────────────

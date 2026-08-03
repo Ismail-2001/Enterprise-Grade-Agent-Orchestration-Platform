@@ -2,7 +2,6 @@ import path from "path";
 import http from "http";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import pino from "pino";
 import { createNamespaceServerInterceptor, encrypt, decrypt, extractNamespace, type EncryptedPayload } from "@e-gaop/shared";
 import { SecretRepository } from "./repository";
 
@@ -32,10 +31,6 @@ export async function createServerBundle(config: {
   grpcPort?: number;
   healthPort?: number;
 }): Promise<ServerBundle> {
-  const logger = pino({
-    level: "silent",
-  });
-
   const PROTO_PATH = path.resolve(__dirname, "../../../api/proto/egaop/v1/secret.proto");
   const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
     keepCase: true,
