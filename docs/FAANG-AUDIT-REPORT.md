@@ -33,12 +33,12 @@ The platform is **not safe for any workload involving real data, real users, or 
 | **LLM Integration** | 9/10 | 10% | 0.90 | Multi-model routing with per-provider timeouts + circuit breakers, per-model tokenizers, streaming, prompt injection detection |
 | **Agent Workflow** | 7/10 | 10% | 0.70 | Temporal ReAct loop correct; state determinism verified; missing: streaming, long-running support |
 | **Memory & State** | 6/10 | 5% | 0.30 | pgvector + Redis works; vector search auth-gated; durable writes via WAL with retry; remaining: N+1 queries |
-| **Observability** | 7/10 | 5% | 0.35 | OTel + Prometheus + Grafana + 5 alerts; missing: distributed trace propagation, dashboard verification |
-| **Testing** | 6/10 | 10% | 0.60 | 330 tests pass; weak: no integration tests with real LLM, no chaos testing, no contract tests |
+| **Observability** | 8/10 | 5% | 0.40 | OTel + Prometheus + Grafana + 5 alerts + W3C trace propagation across all gRPC services; remaining: dashboard verification |
+| **Testing** | 7/10 | 10% | 0.70 | 336 tests pass + k6 smoke load test in CI with SLO thresholds; weak: no integration tests with real LLM, no chaos testing in CI |
 | **Deployment & CI/CD** | 8/10 | 10% | 0.80 | Helm charts (11 sub-charts), HPA, PDB, NetworkPolicy; minor: no canary automation, no GitOps |
-| **Operability & DX** | 7/10 | 5% | 0.35 | Docker Compose works; missing: runbooks, debugging tools, load testing in CI |
+| **Operability & DX** | 8/10 | 5% | 0.40 | Docker Compose works, runbooks, developer guide, k6 load testing in CI; missing: chaos testing |
 
-**Overall Weighted Score: 7.30 / 10 (73.0%)** — up from 6.35/10 after Phase 1 + Phase 2 remediation, then 7.10/10 after Phase 3
+**Overall Weighted Score: 7.50 / 10 (75.0%)** — up from 6.35/10 after Phase 1 + Phase 2 remediation, then 7.10/10 after Phase 3, then 7.30/10 after Phase 3 completion
 
 *Note: This scores production-readiness, not demo-readiness. The platform scored 97% on its own self-assessment because it measures "how many features exist" rather than "how many vulnerabilities exist."*
 
@@ -633,7 +633,8 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 > - Phase 1 merged in commit `efbe490` (JWT fail-closed, DLQ auth, SSRF allowlist, OPA policy verification, JWT expiry + timing-safe compare, action extraction).
 > - Phase 2 merged in commit `de33429` (Redis token revocation, label-key SQLi allowlist, ETag hash-only cache, secret-store agent scoping, vector search auth, per-provider circuit breakers + AbortSignal timeouts, container cleanup on shutdown, container count limit, init command allowlist, seccomp profile + CapDrop ALL).
 > - Phase 3 merged in commit `743c5dc` (PII regex expansion → CC/phone/DOB/IP, retry on 5xx + network errors, memory write-ahead log with retry/backoff, API versioning in response metadata + namespaces pagination, developer guide + runbooks). Remaining Phase 3 items (#20 per-model tokenizers, #21 LLM streaming, #24 prompt injection detection) implemented and verified in this update.
-> - Verification: **330+ tests passing** across all workspaces; `tsc --noEmit` clean in every workspace; ESLint 0 errors and 0 warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**; docker-compose validates; Helm lint + template clean.
+> - Phase 4: #29 distributed trace propagation (client + server interceptors, 8 services wired) and #27 k6 load testing in CI (smoke load test with SLO thresholds) implemented and verified.
+> - Verification: **336+ tests passing** across all workspaces; `tsc --noEmit` clean in every workspace; ESLint 0 errors and 0 warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**; docker-compose validates; Helm lint + template clean.
 
 ### Phase 1: Critical Security Fixes (1-2 days) — ✅ COMPLETE
 | # | Finding | Effort | Impact | Status |
@@ -673,13 +674,13 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 | 25 | Runbooks + developer guide | 8h | Operability | ✅ |
 
 ### Phase 4: Production Hardening (2-4 weeks)
-| # | Finding | Effort | Impact |
-|---|---------|--------|--------|
-| 26 | GitOps (ArgoCD) | 16h | Deployment maturity |
-| 27 | Load testing in CI (k6) | 8h | Performance validation |
-| 28 | Chaos testing | 16h | Resilience |
-| 29 | Distributed trace propagation | 8h | Observability |
-| 30 | SLO/SLI tracking | 8h | Reliability |
+| # | Finding | Effort | Impact | Status |
+|---|---------|--------|--------|--------|
+| 26 | GitOps (ArgoCD) | 16h | Deployment maturity | |
+| 27 | Load testing in CI (k6) | 8h | Performance validation | ✅ |
+| 28 | Chaos testing | 16h | Resilience | |
+| 29 | Distributed trace propagation | 8h | Observability | ✅ |
+| 30 | SLO/SLI tracking | 8h | Reliability | |
 
 ---
 
@@ -713,14 +714,14 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 | **Architecture** | Strong — 5-plane design is sound and production-appropriate |
 | **Security** | Improved — all 5 Critical + 17 High remediated; Medium/Low (TLS, audit, pen test) remain |
 | **Code Quality** | Good — TypeScript strict mode, consistent patterns, clean structure |
-| **Testing** | Adequate — 330 tests cover happy path; needs integration + chaos testing |
+| **Testing** | Adequate — 336 tests cover happy path + k6 smoke load test in CI; needs integration + chaos testing |
 | **Deployment** | Good — Helm charts with HPA/PDB/NetworkPolicy; needs GitOps |
 | **Documentation** | Good — README, Helm docs, OpenAPI, developer guide, runbooks |
-| **Overall** | **7.30/10 — Ready for pilot workloads; harden Low items before scale-out** |
+| **Overall** | **7.50/10 — Ready for pilot workloads; harden Low items before scale-out** |
 
 **The platform demonstrates genuine senior-level engineering in architecture, workflow design, and operational maturity.** The 5-plane separation, Temporal integration, OPA policy engine, and comprehensive CI/CD pipeline are all production-appropriate choices. The codebase is well-structured, consistently typed, and maintainable.
 
-**The security posture is now materially improved.** All 5 Critical findings (SSRF, Docker escape, policy bypass, JWT bypass, unauthenticated admin endpoint) and all 17 High findings have been remediated, verified by 330 passing tests and clean typecheck/lint across all workspaces. All 18 Medium items (including per-model tokenizers, LLM streaming, and prompt injection detection) are remediated; the remaining 14 Low items (TLS/mTLS, audit trail completeness, penetration testing, runbooks) remain as tracked follow-up work.
+**The security posture is now materially improved.** All 5 Critical findings (SSRF, Docker escape, policy bypass, JWT bypass, unauthenticated admin endpoint) and all 17 High findings have been remediated, verified by 336 passing tests and clean typecheck/lint across all workspaces. All 18 Medium items (including per-model tokenizers, LLM streaming, and prompt injection detection) are remediated; the remaining 14 Low items (TLS/mTLS, audit trail completeness, penetration testing, runbooks) remain as tracked follow-up work.
 
 **Recommendation:** The platform is now safe for pilot workloads and private staging deployments. Track and remediate the remaining Low findings (TLS everywhere, audit trail, pen test) before public multi-tenant production use.
 

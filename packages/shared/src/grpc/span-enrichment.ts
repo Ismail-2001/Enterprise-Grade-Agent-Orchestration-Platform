@@ -30,20 +30,7 @@ export function spanEnrichmentInterceptor(config: SpanEnrichmentConfig): Interce
 
     const requester: Requester = {
       start(metadata: Metadata, listener: InterceptingListener): Partial<InterceptingListener> {
-        const carrier: Record<string, string> = {};
-        const metadataMap = metadata.getMap();
-        for (const [key, value] of Object.entries(metadataMap)) {
-          carrier[key] = typeof value === "string" ? value : new TextDecoder().decode(value);
-        }
-
-        const extractedContext = propagator.extract(context.active(), carrier, {
-          get(carrier: Record<string, string>, key: string): string | undefined {
-            return carrier[key];
-          },
-          keys(carrier: Record<string, string>): string[] {
-            return Object.keys(carrier);
-          },
-        });
+        const parentContext = context.active();
 
         const span = tracer.startSpan(
           `grpc.${grpcService}.${grpcMethod}`,
@@ -56,7 +43,7 @@ export function spanEnrichmentInterceptor(config: SpanEnrichmentConfig): Interce
               "rpc.grpc.status_code": 0,
             },
           },
-          extractedContext
+          parentContext
         );
 
         const namespaceValues = metadata.get("x-namespace");

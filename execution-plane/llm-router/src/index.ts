@@ -16,7 +16,7 @@ import OpenAI from "openai";
 import CircuitBreaker from "opossum";
 import { countTokensForModel } from "./tokens.js";
 import { detectPromptInjection, scanMessagesForInjection } from "./prompt-injection.js";
-import { RateLimiter, extractNamespace, getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, AsyncSemaphore } from "@e-gaop/shared";
+import { RateLimiter, extractNamespace, getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, AsyncSemaphore } from "@e-gaop/shared";
 
 const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
@@ -765,7 +765,7 @@ async function* streamLLMWithFallback(
 }
 
 const server = new grpc.Server({
-  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
+  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 server.addService(llmService.service, {

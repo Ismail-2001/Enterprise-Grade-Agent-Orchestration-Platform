@@ -6,6 +6,7 @@ import * as fs from "fs";
 import pino from "pino";
 import { createServiceTokenServerInterceptor } from "./interceptors.js";
 import { createNamespaceServerInterceptor } from "./namespace-enforcement.js";
+import { createTraceServerInterceptor } from "./trace-propagation.js";
 import { createMTLSServerCredentials, createMTLSClientCredentials, watchCertificateRotation } from "../tls.js";
 import type { ServerInterceptor } from "@grpc/grpc-js";
 
@@ -40,6 +41,7 @@ export class GrpcServer {
     const defaultInterceptors = [
       createNamespaceServerInterceptor(),
       createServiceTokenServerInterceptor(),
+      createTraceServerInterceptor(),
     ];
 
     this.server = new grpc.Server({

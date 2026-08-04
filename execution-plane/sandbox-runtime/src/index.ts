@@ -11,7 +11,7 @@ import http from "http";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
-import { getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createAuditEntry } from "@e-gaop/shared";
+import { getServerCredentials, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, createAuditEntry } from "@e-gaop/shared";
 import type { SandboxDriver } from "@e-gaop/shared";
 
 const logger = pino({
@@ -65,7 +65,7 @@ const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const runtimeService = egaopProto.egaop.v1.RuntimeService;
 
 const server = new grpc.Server({
-  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
+  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 server.addService(runtimeService.service, {

@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, validateSecrets, loadSecretsIntoEnv } from "@e-gaop/shared";
 
 initTracing("policy-plane");
 loadSecretsIntoEnv();
@@ -74,7 +74,7 @@ const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const observabilityService = egaopProto["egaop"]?.["v1"]?.["ObservabilityService"];
 
 const server = new grpc.Server({
-  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
+  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 if (observabilityService?.service) {

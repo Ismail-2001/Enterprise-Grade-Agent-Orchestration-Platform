@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, createAuditEntry } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, validateSecrets, loadSecretsIntoEnv, createAuditEntry } from "@e-gaop/shared";
 
 initTracing("memory-plane");
 loadSecretsIntoEnv();
@@ -112,7 +112,7 @@ const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const memoryService = egaopProto.egaop.v1.MemoryService;
 
 const server = new grpc.Server({
-  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
+  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 function sanitizeKeyComponent(value: string): string {

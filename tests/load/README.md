@@ -41,6 +41,16 @@ k6 run tests/load/k6-script.js --scenario stress -e BASE_URL=http://localhost:30
 k6 run tests/load/k6-script.js --scenario soak -e BASE_URL=http://localhost:3001
 ```
 
+### CI smoke test (enforced in GitHub Actions)
+
+The `load-test` CI job boots the API server against ephemeral Postgres/Redis,
+applies migrations, and runs a fast control-plane smoke load test with SLO
+thresholds that fail the build on regression:
+
+```bash
+k6 run tests/load/ci-smoke.js -e BASE_URL=http://localhost:3001
+```
+
 ### Run from CI
 
 ```yaml
@@ -59,6 +69,18 @@ k6 run tests/load/k6-script.js --scenario soak -e BASE_URL=http://localhost:3001
 | Error rate | < 1% |
 | Any endpoint p99 | < 2000ms |
 | Any endpoint max | < 5000ms |
+
+### CI smoke SLOs (`ci-smoke.js`)
+
+| Metric | SLO |
+|--------|-----|
+| Health check p95 | < 200ms |
+| Auth (login) p95 | < 1000ms |
+| Agent CRUD p95 | < 1500ms |
+| Namespaces p95 | < 1500ms |
+| Any endpoint p95 | < 500ms |
+| Any endpoint max | < 3000ms |
+| Error rate | < 1% |
 
 ## Scenarios
 

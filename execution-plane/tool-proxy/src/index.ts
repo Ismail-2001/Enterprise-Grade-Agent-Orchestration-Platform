@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, validateSecrets, loadSecretsIntoEnv, PIIViolationError, createAuditEntry } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, validateSecrets, loadSecretsIntoEnv, PIIViolationError, createAuditEntry } from "@e-gaop/shared";
 
 initTracing("tool-proxy");
 loadSecretsIntoEnv();
@@ -200,7 +200,7 @@ async function fetchWithRetry(url: string, opts: any, maxRetries = 3): Promise<R
 }
 
 const server = new grpc.Server({
-  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor()],
+  interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 server.addService(toolService.service, {

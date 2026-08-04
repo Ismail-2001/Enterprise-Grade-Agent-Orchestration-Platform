@@ -6,9 +6,21 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
-- **Per-model tokenizers** in the LLM router: model-aware token counting dispatches between `o200k_base` (gpt-4o/o-series) and `cl100k_base` (gpt-3.5/4, Anthropic Claude, Ollama heuristics); `countTokensForModel(text, model)` exported with backward-compatible `countTokens(text)`.
-- **LLM streaming** (`GenerateStream` server-streaming RPC in `egaop.v1.LLMService`): token-delta streaming for OpenAI (SDK stream + usage), Anthropic (SSE), and Ollama (NDJSON); final chunk carries aggregate usage/cost/finish-reason; multi-model fallback chain preserved.
-- **Prompt injection detection** in the LLM router: heuristic scanner (`detectPromptInjection`/`scanMessagesForInjection`) flags instruction-override, system-prompt exfiltration, jailbreak, secret/tool exfiltration, role-reassignment; critical/high payloads are rejected with `INVALID_ARGUMENT` + scan details before any upstream call; low-risk indicators log a warning.
+- **Distributed trace propagation (Phase 4 #29):** W3C trace context extraction/insertion across all gRPC service boundaries via `createTraceServerInterceptor` (server) and updated `spanEnrichmentInterceptor` (client); auto-injects `traceparent` on outbound calls; propagates server span as active context for downstream handlers; wired into all 8 gRPC services (llm-router, tool-proxy, sandbox-runtime, secret-store, api-server, policy-plane, memory-plane, observability-plane) plus shared `GrpcServer` defaults.
+- **k6 load testing in CI (Phase 4 #27):** Dedicated `load-test` GitHub Actions job boots API server with ephemeral Postgres/Redis, applies migrations, runs `tests/load/ci-smoke.js` (2 VUs × 10 iterations) exercising health, auth, namespaces, agents CRUD; enforces SLO thresholds (health p95 < 200ms, auth p95 < 1s, agent CRUD p95 < 1.5s, error rate < 1%); uploads k6 summary artifact.
+- **CI smoke load test script** `tests/load/ci-smoke.js`: fast deterministic control-plane smoke scenario for PR gating.
+
+### Observability
+
+- Distributed trace propagation across all 8 services via W3C `traceparent` extraction/insertion; server spans created with SERVER kind + `namespace`/`agent.id` attributes; client spans use active context as parent instead of root; 6 new tests in `packages/shared/src/__tests__/trace-propagation.test.ts`.
+
+### Testing
+
+- Added 6 unit tests for trace propagation (server interceptor extraction, parent context propagation, child span inheritance, error status recording, cancellation, fresh-root fallback); shared workspace test suite now 80 tests; full workspace suite now 336 tests (was 330).
+
+### Changed
+
+- FAANG audit re-scored to **7.50/10** (Observability 8/10, Testing 7/10, Operability 8/10); Phase 4 items #27 and #29 complete.
 
 ### Security
 

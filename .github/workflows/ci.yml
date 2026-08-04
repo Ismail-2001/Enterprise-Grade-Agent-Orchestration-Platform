@@ -258,6 +258,110 @@ jobs:
       - name: Run security tests
         run: npx jest --config "${{ github.workspace }}/tests/jest.config.ts" --selectProjects security --passWithNoTests --forceExit
 
+  load-test:
+    name: Load Test (k6 smoke)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    needs: [lint, typecheck]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: egaop
+          POSTGRES_PASSWORD: ci-loadtest-postgres-pass
+          POSTGRES_DB: egaop_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: development
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: egaop_test
+      POSTGRES_USER: egaop
+      POSTGRES_PASSWORD: ci-loadtest-postgres-pass
+      POSTGRES_URL: postgresql://egaop:ci-loadtest-postgres-pass@localhost:5432/egaop_test
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ci-loadtest-redis-pass-placeholder
+      TLS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - run: npm ci --prefer-offline --no-fund
+      - name: Repair npm 11 hoisting (extraction bug workaround)
+        run: |
+          npm dedupe
+          # npm 11 (Node 24) bug: npm ci creates package dirs but omits build/
+          # content for many @opentelemetry/* and @grpc/* transitive deps.
+          # Directly verify a known-cache-critical transitive dep and retry
+          # npm dedupe until it's fully extracted (up to 10 passes).
+          for i in $(seq 1 10); do
+            test -f node_modules/@grpc/proto-loader/build/src/index.js && break
+            npm dedupe
+          done
+          # Final verification (won't fail the step, but will surface in logs)
+          test -f node_modules/@grpc/proto-loader/build/src/index.js || \
+            echo "WARN: @grpc/proto-loader still incomplete after repair loop"
+      - name: Generate test secrets
+        run: |
+          echo "JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')" >> "$GITHUB_ENV"
+          echo "EGAOP_MASTER_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "INTERNAL_SERVICE_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=sk-ci-loadtest-$(openssl rand -hex 8)" >> "$GITHUB_ENV"
+          echo "GRAFANA_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')" >> "$GITHUB_ENV"
+      - name: Build shared package
+        run: npm run build --workspace=packages/shared
+      - name: Apply database migrations
+        run: node scripts/migrate.mjs up
+      - name: Build API server
+        run: npm run build -w control-plane/api-server
+      - name: Start API server
+        run: |
+          nohup node control-plane/api-server/dist/index.js > /tmp/api-server.log 2>&1 &
+          echo "api-server pid: $!"
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/health > /dev/null 2>&1; then
+              echo "api-server is up after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "api-server failed to become healthy"
+          tail -100 /tmp/api-server.log
+          exit 1
+      - name: Run k6 smoke load test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/ci-smoke.js
+          flags: -e BASE_URL=http://localhost:3001 --summary-export=results/k6-summary.json
+      - name: Show API server log (on failure)
+        if: failure()
+        run: tail -100 /tmp/api-server.log
+      - name: Upload k6 summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-summary
+          path: results/k6-summary.json
+          retention-days: 14
+
   #############################################################################
   # BUILD — Docker images (parallel matrix)
   #############################################################################
@@ -351,7 +455,7 @@ jobs:
     name: CI Summary
     runs-on: ubuntu-22.04
     if: always()
-    needs: [audit, lint, typecheck, helm-lint, test-unit, test-cross-cutting, docker-build, docker-compose-validate]
+    needs: [audit, lint, typecheck, helm-lint, test-unit, test-cross-cutting, load-test, docker-build, docker-compose-validate]
     steps:
       - run: |
           echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
@@ -364,6 +468,7 @@ jobs:
           echo "| Helm Lint | ${{ needs.helm-lint.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.test-unit.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Cross-Cutting | ${{ needs.test-cross-cutting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Load Test (k6) | ${{ needs.load-test.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Images | ${{ needs.docker-build.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Compose Validate | ${{ needs.docker-compose-validate.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

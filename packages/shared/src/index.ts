@@ -47,6 +47,7 @@ export {
   shutdownMetrics,
 } from "./metrics/index.js";
 export { spanEnrichmentInterceptor } from "./grpc/span-enrichment.js";
+export { createTraceServerInterceptor } from "./grpc/trace-propagation.js";
 export {
   createNamespaceEnforcementInterceptor,
   createNamespaceServerInterceptor,
