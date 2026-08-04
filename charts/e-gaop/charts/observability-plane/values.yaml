@@ -13,6 +13,8 @@ resources:
     memory: 1Gi
 serviceMonitor:
   enabled: false
+prometheusRules:
+  enabled: false
 tls:
   certManager:
     enabled: false

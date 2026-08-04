@@ -1,0 +1,116 @@
+{{- if and .Values.enabled .Values.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-egaop-slo-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: egaop
+    app.kubernetes.io/component: observability-plane
+    release: {{ .Release.Name }}
+spec:
+  groups:
+    - name: egaop.slo.rules
+      rules:
+        # ── 5-minute burn rate: page (fast alert) ──
+        - alert: EgaopSLOBurnRateHigh
+          expr: |
+            (
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[5m])) by (app_kubernetes_io_component)
+              /
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[5m])) by (app_kubernetes_io_component)
+            ) > 14.4
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SLO burn rate critical: {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} is consuming its
+              error budget 14.4x faster than allowed. At this rate the 30-day error
+              budget will be exhausted within ~2 days. Immediate investigation required.
+
+        # ── 30-minute burn rate: page ──
+        - alert: EgaopSLOBurnRateHigh30m
+          expr: |
+            (
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[30m])) by (app_kubernetes_io_component)
+              /
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[30m])) by (app_kubernetes_io_component)
+            ) > 6
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SLO burn rate critical (30m): {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} is consuming its
+              error budget 6x faster than allowed over a 30-minute window.
+
+        # ── 60-minute burn rate: ticket (slow alert) ──
+        - alert: EgaopSLOBurnRateWarning
+          expr: |
+            (
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[60m])) by (app_kubernetes_io_component)
+              /
+              sum(rate(http_requests_total{app_kubernetes_io_component!=""}[60m])) by (app_kubernetes_io_component)
+            ) > 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SLO burn rate warning (60m): {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} is consuming its
+              error budget 3x faster than allowed over a 60-minute window.
+
+        # ── Availability below SLO target ──
+        - alert: EgaopAvailabilityBelowSLO
+          expr: |
+            (
+              1 - (sum(rate(http_requests_total{code=~"5.."}[5m])) by (app_kubernetes_io_component)
+              /
+              sum(rate(http_requests_total[5m])) by (app_kubernetes_io_component))
+            ) < 0.999
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Availability below 99.9%: {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} availability has
+              dropped below the 99.9% SLO target.
+
+        # ── Latency p95 above SLO target ──
+        - alert: EgaopLatencyP95AboveSLO
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_ms_bucket[5m])) by (le, app_kubernetes_io_component)
+            ) > 1000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "p95 latency above 1s: {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} p95 latency has
+              exceeded the 1000ms SLO target.
+
+        # ── Error budget nearly exhausted ──
+        - alert: EgaopErrorBudgetExhausted
+          expr: |
+            (
+              sum(increase(http_requests_total{code=~"5.."}[1h])) by (app_kubernetes_io_component)
+              /
+              clamp_min(sum(increase(http_requests_total[1h])) by (app_kubernetes_io_component), 1)
+            ) > 0.001
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Error budget nearly exhausted: {{ $labels.app_kubernetes_io_component }}"
+            description: >
+              Component {{ $labels.app_kubernetes_io_component }} has consumed more
+              than 0.1% of its 30-day error budget in the last hour, indicating
+              accelerated budget depletion.
+{{- end }}

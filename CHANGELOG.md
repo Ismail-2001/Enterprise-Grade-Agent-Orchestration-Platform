@@ -6,6 +6,9 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **SLO/SLI tracking (Phase 4 #30):** `SLOTracker` class in `packages/shared/src/slo/` computes SLI from OTel histograms/counters, tracks error budgets, and computes burn rates across 5/30/60-minute windows; defines 6 default SLOs (API availability, API latency p95, gRPC availability, gRPC latency p95, agent execution success, LLM latency p99).
+- **`/api/slos` endpoint** in api-server: returns SLO snapshot with configurable window; exposes compliance status, error budget consumption, and burn-rate alerts.
+- **Prometheus alerting rules** for SLO burn rates: 5-min (14.4x) page, 30-min (6x) page, 60-min (3x) ticket alerts; availability below 99.9%, p95 latency above 1s, and error budget exhaustion alerts.
 - **Distributed trace propagation (Phase 4 #29):** W3C trace context extraction/insertion across all gRPC service boundaries via `createTraceServerInterceptor` (server) and updated `spanEnrichmentInterceptor` (client); auto-injects `traceparent` on outbound calls; propagates server span as active context for downstream handlers; wired into all 8 gRPC services (llm-router, tool-proxy, sandbox-runtime, secret-store, api-server, policy-plane, memory-plane, observability-plane) plus shared `GrpcServer` defaults.
 - **k6 load testing in CI (Phase 4 #27):** Dedicated `load-test` GitHub Actions job boots API server with ephemeral Postgres/Redis, applies migrations, runs `tests/load/ci-smoke.js` (2 VUs × 10 iterations) exercising health, auth, namespaces, agents CRUD; enforces SLO thresholds (health p95 < 200ms, auth p95 < 1s, agent CRUD p95 < 1.5s, error rate < 1%); uploads k6 summary artifact.
 - **CI smoke load test script** `tests/load/ci-smoke.js`: fast deterministic control-plane smoke scenario for PR gating.
@@ -16,11 +19,11 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Testing
 
-- Added 6 unit tests for trace propagation (server interceptor extraction, parent context propagation, child span inheritance, error status recording, cancellation, fresh-root fallback); shared workspace test suite now 80 tests; full workspace suite now 336 tests (was 330).
+- Added 24 unit tests for SLO tracker (define/record, availability SLI, latency SLI, burn rates, window filtering, snapshot, clear/reset, DEFAULT_SLO_DEFINITIONS); added 6 unit tests for trace propagation; shared workspace test suite now 104 tests; full workspace suite now 360+ tests.
 
 ### Changed
 
-- FAANG audit re-scored to **7.50/10** (Observability 8/10, Testing 7/10, Operability 8/10); Phase 4 items #27 and #29 complete.
+- FAANG audit re-scored to **7.55/10** (Observability 9/10, Testing 7/10, Operability 8/10); Phase 4 items #27, #29, and #30 complete.
 
 ### Security
 

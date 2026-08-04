@@ -94,3 +94,16 @@ export type { SandboxDriver, SandboxSpec, SandboxResult } from "./sandbox/sandbo
 export type { K8sSandboxRuntime } from "./sandbox/k8s-sandbox-runtime.js";
 export { createAuditEntry, getAuditChain, verifyAuditChain } from "./audit/index.js";
 export type { AuditEntry, AuditEventType, AuditSeverity, AuditActor, AuditTarget, AuditAction } from "./audit/index.js";
+export { SLOTracker } from "./slo/index.js";
+export type {
+  SLOType,
+  SLIMetricSource,
+  SLIDefinition,
+  SLOTarget,
+  SLOErrorBudget,
+  SLOBurnRate,
+  SLOStatus,
+  SLOSnapshot,
+} from "./slo/types.js";
+export { BURN_RATE_WINDOWS, DEFAULT_SLO_DEFINITIONS } from "./slo/types.js";
+export type { SLISample } from "./slo/index.js";

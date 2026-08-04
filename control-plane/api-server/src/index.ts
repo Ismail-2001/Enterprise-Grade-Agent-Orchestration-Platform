@@ -1,4 +1,4 @@
-import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, validateSecrets, loadSecretsIntoEnv } from "@e-gaop/shared";
+import { initTracing, shutdownTracing, createNamespaceServerInterceptor, createServiceTokenServerInterceptor, createTraceServerInterceptor, validateSecrets, loadSecretsIntoEnv, SLOTracker, DEFAULT_SLO_DEFINITIONS } from "@e-gaop/shared";
 
 initTracing("api-server");
 loadSecretsIntoEnv();
@@ -262,6 +262,7 @@ fastify.register(swagger, {
       { name: "Namespaces", description: "Namespace isolation and quotas" },
       { name: "Traces", description: "Execution traces and replay" },
       { name: "Metrics", description: "Platform metrics and monitoring" },
+      { name: "SLOs", description: "Service Level Objectives and SLI tracking" },
       { name: "Auth", description: "Authentication and registration" },
       { name: "Health", description: "Service health checks" },
       { name: "Streaming", description: "WebSocket real-time event streaming" },
@@ -311,6 +312,7 @@ const CACHE_TTL: Record<string, string> = {
   "/api/executions": "public, max-age=30, stale-while-revalidate=120",
   "/api/traces": "no-cache, max-age=10",
   "/api/metrics": "no-cache, max-age=15",
+  "/api/slos": "no-cache, max-age=30",
   "/api/events": "no-cache, max-age=10",
   "/api/auth/me": "private, no-cache, max-age=10",
 };
@@ -1012,6 +1014,20 @@ fastify.get("/api/metrics", async () => {
       activeNamespaces: 1,
     });
   }
+});
+
+// ── SLO/SLI Tracking ──
+
+const sloTracker = new SLOTracker();
+for (const [name, def] of Object.entries(DEFAULT_SLO_DEFINITIONS)) {
+  const target = def.type === "availability" ? 0.999 : def.metricName.includes("p99") ? 3000 : 1000;
+  sloTracker.define(name, def.type, target);
+}
+
+fastify.get("/api/slos", async (request) => {
+  const windowMinutes = Number((request.query as Record<string, string>).window) || 30;
+  const snapshot = sloTracker.snapshot(windowMinutes);
+  return apiResponse(snapshot);
 });
 
 // ── WebSocket Event Streaming ──

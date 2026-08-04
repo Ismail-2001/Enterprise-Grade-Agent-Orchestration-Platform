@@ -33,12 +33,12 @@ The platform is **not safe for any workload involving real data, real users, or 
 | **LLM Integration** | 9/10 | 10% | 0.90 | Multi-model routing with per-provider timeouts + circuit breakers, per-model tokenizers, streaming, prompt injection detection |
 | **Agent Workflow** | 7/10 | 10% | 0.70 | Temporal ReAct loop correct; state determinism verified; missing: streaming, long-running support |
 | **Memory & State** | 6/10 | 5% | 0.30 | pgvector + Redis works; vector search auth-gated; durable writes via WAL with retry; remaining: N+1 queries |
-| **Observability** | 8/10 | 5% | 0.40 | OTel + Prometheus + Grafana + 5 alerts + W3C trace propagation across all gRPC services; remaining: dashboard verification |
-| **Testing** | 7/10 | 10% | 0.70 | 336 tests pass + k6 smoke load test in CI with SLO thresholds; weak: no integration tests with real LLM, no chaos testing in CI |
+| **Observability** | 9/10 | 5% | 0.45 | OTel + Prometheus + Grafana + 5 alerts + W3C trace propagation + SLO/SLI tracker with burn-rate alerts; remaining: dashboard verification |
+| **Testing** | 7/10 | 10% | 0.70 | 360 tests pass + k6 smoke load test in CI with SLO thresholds + SLO/SLI unit tests; weak: no integration tests with real LLM, no chaos testing in CI |
 | **Deployment & CI/CD** | 8/10 | 10% | 0.80 | Helm charts (11 sub-charts), HPA, PDB, NetworkPolicy; minor: no canary automation, no GitOps |
 | **Operability & DX** | 8/10 | 5% | 0.40 | Docker Compose works, runbooks, developer guide, k6 load testing in CI; missing: chaos testing |
 
-**Overall Weighted Score: 7.50 / 10 (75.0%)** — up from 6.35/10 after Phase 1 + Phase 2 remediation, then 7.10/10 after Phase 3, then 7.30/10 after Phase 3 completion
+**Overall Weighted Score: 7.55 / 10 (75.5%)** — up from 6.35/10 after Phase 1 + Phase 2 remediation, then 7.10/10 after Phase 3, then 7.30/10 after Phase 3 completion, then 7.50/10 after #27/#29
 
 *Note: This scores production-readiness, not demo-readiness. The platform scored 97% on its own self-assessment because it measures "how many features exist" rather than "how many vulnerabilities exist."*
 
@@ -555,10 +555,10 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 - No distributed trace propagation across gRPC calls
 - No log aggregation (Loki configured but not verified)
 - No custom metrics per agent/workflow
-- No SLO/SLI tracking
+- ~~No SLO/SLI tracking~~ ✅ DONE (#30)
 - No anomaly detection
 
-**Recommendation:** Verify dashboard rendering, add custom metrics, implement SLO tracking.
+**Recommendation:** Verify dashboard rendering, add custom metrics. ~~implement SLO tracking.~~
 
 ---
 
@@ -633,8 +633,8 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 > - Phase 1 merged in commit `efbe490` (JWT fail-closed, DLQ auth, SSRF allowlist, OPA policy verification, JWT expiry + timing-safe compare, action extraction).
 > - Phase 2 merged in commit `de33429` (Redis token revocation, label-key SQLi allowlist, ETag hash-only cache, secret-store agent scoping, vector search auth, per-provider circuit breakers + AbortSignal timeouts, container cleanup on shutdown, container count limit, init command allowlist, seccomp profile + CapDrop ALL).
 > - Phase 3 merged in commit `743c5dc` (PII regex expansion → CC/phone/DOB/IP, retry on 5xx + network errors, memory write-ahead log with retry/backoff, API versioning in response metadata + namespaces pagination, developer guide + runbooks). Remaining Phase 3 items (#20 per-model tokenizers, #21 LLM streaming, #24 prompt injection detection) implemented and verified in this update.
-> - Phase 4: #29 distributed trace propagation (client + server interceptors, 8 services wired) and #27 k6 load testing in CI (smoke load test with SLO thresholds) merged in commit `e2f139b`.
-> - Verification: **336+ tests passing** across all workspaces; `tsc --noEmit` clean in every workspace; ESLint 0 errors and 0 warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**; docker-compose validates; Helm lint + template clean.
+> - Phase 4: #29 distributed trace propagation (client + server interceptors, 8 services wired) and #27 k6 load testing in CI (smoke load test with SLO thresholds) merged in commit `e2f139b`. #30 SLO/SLI tracker with burn-rate alerts and /api/slos endpoint implemented.
+> - Verification: **360+ tests passing** across all workspaces; `tsc --noEmit` clean in every workspace; ESLint 0 errors and 0 warnings across all 10 workspaces; `npm audit` **0 vulnerabilities**; docker-compose validates; Helm lint + template clean.
 
 ### Phase 1: Critical Security Fixes (1-2 days) — ✅ COMPLETE
 | # | Finding | Effort | Impact | Status |
@@ -680,7 +680,7 @@ const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, { ... });
 | 27 | Load testing in CI (k6) | 8h | Performance validation | ✅ |
 | 28 | Chaos testing | 16h | Resilience | |
 | 29 | Distributed trace propagation | 8h | Observability | ✅ |
-| 30 | SLO/SLI tracking | 8h | Reliability | |
+| 30 | SLO/SLI tracking | 8h | Reliability | ✅ |
 
 ---
 
