@@ -182,7 +182,16 @@ jobs:
           test -f node_modules/@grpc/proto-loader/build/src/index.js || \
             echo "WARN: @grpc/proto-loader still incomplete after repair loop"
       - run: npm run build --workspace=packages/shared
-      - run: npm test --workspaces --if-present -- --passWithNoTests
+      - run: npm test --workspaces --if-present -- --passWithNoTests --coverage
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            **/coverage/lcov.info
+            **/coverage/coverage-summary.json
+          retention-days: 14
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -192,6 +201,57 @@ jobs:
             **/junit.xml
             **/test-results.json
           retention-days: 14
+
+  test-migrations:
+    name: Migration Verification
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: egaop
+          POSTGRES_PASSWORD: ci-migration-test-pass
+          POSTGRES_DB: egaop_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: development
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: egaop_migration_test
+      POSTGRES_USER: egaop
+      POSTGRES_PASSWORD: ci-migration-test-pass
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - run: npm ci --prefer-offline --no-fund
+      - name: Repair npm 11 hoisting
+        run: |
+          npm dedupe
+          for i in $(seq 1 10); do
+            test -f node_modules/@grpc/proto-loader/build/src/index.js && break
+            npm dedupe
+          done
+      - name: Apply migrations (up)
+        run: node scripts/migrate.mjs up
+      - name: Verify status (should be clean)
+        run: node scripts/migrate.mjs status
+      - name: Rollback all migrations (down)
+        run: node scripts/migrate.mjs down --count=100
+      - name: Re-apply migrations (up again)
+        run: node scripts/migrate.mjs up
+      - name: Final status check
+        run: node scripts/migrate.mjs status
 
   test-cross-cutting:
     name: Cross-Cutting Tests
@@ -455,7 +515,7 @@ jobs:
     name: CI Summary
     runs-on: ubuntu-22.04
     if: always()
-    needs: [audit, lint, typecheck, helm-lint, test-unit, test-cross-cutting, load-test, docker-build, docker-compose-validate]
+    needs: [audit, lint, typecheck, helm-lint, test-unit, test-migrations, test-cross-cutting, load-test, docker-build, docker-compose-validate]
     steps:
       - run: |
           echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
@@ -467,6 +527,7 @@ jobs:
           echo "| TypeCheck | ${{ needs.typecheck.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Helm Lint | ${{ needs.helm-lint.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.test-unit.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Migrations | ${{ needs.test-migrations.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Cross-Cutting | ${{ needs.test-cross-cutting.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Load Test (k6) | ${{ needs.load-test.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Images | ${{ needs.docker-build.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY

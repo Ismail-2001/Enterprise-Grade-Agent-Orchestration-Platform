@@ -235,3 +235,290 @@ describe("Contract: api-server → downstream services", () => {
     );
   });
 });
+
+describe("Contract: workflow-engine → sandbox-runtime", () => {
+  let sandboxPort: number;
+  let sandboxClient: any;
+  let server: grpc.Server;
+
+  const runtimeProto = loadProto("egaop/v1/runtime.proto");
+
+  beforeAll(async () => {
+    const runtimeImpl = {
+      CreateSandbox: (call: any, callback: any) => {
+        callback(null, {
+          sandbox_id: `sb-${Date.now()}`,
+          status: "running",
+          ip_address: "10.0.0.1",
+          init_outputs: [],
+        });
+      },
+      TerminateSandbox: (call: any, callback: any) => {
+        callback(null, { success: true });
+      },
+      GetSandboxStatus: (call: any, callback: any) => {
+        callback(null, {
+          status: "running",
+          cpu_usage: 0.25,
+          memory_usage: 0.4,
+          started_at: { seconds: Math.floor(Date.now() / 1000) },
+        });
+      },
+    };
+
+    const { server: srv, port } = await startServer(runtimeProto.egaop.v1.RuntimeService.service, runtimeImpl);
+    server = srv;
+    sandboxPort = port;
+    sandboxClient = new runtimeProto.egaop.v1.RuntimeService(
+      `localhost:${port}`,
+      grpc.credentials.createInsecure()
+    );
+  });
+
+  afterAll(() => server.forceShutdown());
+
+  it("CreateSandbox returns sandbox_id and status", (done) => {
+    sandboxClient.CreateSandbox(
+      {
+        agent_id: "agent-001",
+        execution_id: "exec-001",
+        image: "python:3.11-slim",
+        isolation_level: "Standard",
+        resources: { cpu: "1", memory: "512Mi" },
+        timeout: "300",
+      },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(typeof response.sandbox_id).toBe("string");
+        expect(response.sandbox_id.length).toBeGreaterThan(0);
+        expect(response.status).toBe("running");
+        expect(typeof response.ip_address).toBe("string");
+        expect(Array.isArray(response.init_outputs)).toBe(true);
+        done();
+      }
+    );
+  });
+
+  it("TerminateSandbox returns success", (done) => {
+    sandboxClient.TerminateSandbox(
+      { sandbox_id: "sb-123", reason: "test cleanup" },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(response.success).toBe(true);
+        done();
+      }
+    );
+  });
+
+  it("GetSandboxStatus returns resource usage", (done) => {
+    sandboxClient.GetSandboxStatus(
+      { sandbox_id: "sb-123" },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(typeof response.status).toBe("string");
+        expect(typeof response.cpu_usage).toBe("number");
+        expect(typeof response.memory_usage).toBe("number");
+        done();
+      }
+    );
+  });
+});
+
+describe("Contract: workflow-engine → memory-plane", () => {
+  let memoryPort: number;
+  let memoryClient: any;
+  let server: grpc.Server;
+
+  const memoryProto = loadProto("egaop/v1/memory.proto");
+
+  beforeAll(async () => {
+    const memoryStore = new Map<string, any>();
+    const memoryImpl = {
+      Read: (call: any, callback: any) => {
+        const key = `${call.request.namespace}:${call.request.agent_id}:${call.request.key}`;
+        const data = memoryStore.get(key);
+        callback(null, { data: data || null, found: !!data });
+      },
+      Write: (call: any, callback: any) => {
+        const key = `${call.request.namespace}:${call.request.agent_id}:${call.request.key}`;
+        memoryStore.set(key, call.request.data);
+        callback(null, { status: "success", version: "1" });
+      },
+      Delete: (call: any, callback: any) => {
+        const key = `${call.request.namespace}:${call.request.agent_id}:${call.request.key}`;
+        memoryStore.delete(key);
+        callback(null, { status: "success" });
+      },
+      List: (call: any, callback: any) => {
+        callback(null, { entries: [] });
+      },
+    };
+
+    const { server: srv, port } = await startServer(memoryProto.egaop.v1.MemoryService.service, memoryImpl);
+    server = srv;
+    memoryPort = port;
+    memoryClient = new memoryProto.egaop.v1.MemoryService(
+      `localhost:${port}`,
+      grpc.credentials.createInsecure()
+    );
+  });
+
+  afterAll(() => server.forceShutdown());
+
+  it("Write returns status and version", (done) => {
+    memoryClient.Write(
+      {
+        agent_id: "agent-001",
+        namespace: "default",
+        memory_type: "working",
+        entity_type: "context",
+        key: "conversation-1",
+        data: { fields: { message: { stringValue: "hello" } } },
+      },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(response.status).toBe("success");
+        expect(typeof response.version).toBe("string");
+        done();
+      }
+    );
+  });
+
+  it("Read returns found=true for existing key", (done) => {
+    memoryClient.Write(
+      {
+        agent_id: "agent-001",
+        namespace: "default",
+        memory_type: "working",
+        entity_type: "context",
+        key: "read-test",
+        data: { fields: { value: { stringValue: "test-data" } } },
+      },
+      () => {
+        memoryClient.Read(
+          {
+            agent_id: "agent-001",
+            namespace: "default",
+            memory_type: "working",
+            entity_type: "context",
+            key: "read-test",
+          },
+          (err: any, response: any) => {
+            expect(err).toBeNull();
+            expect(response.found).toBe(true);
+            done();
+          }
+        );
+      }
+    );
+  });
+
+  it("Read returns found=false for missing key", (done) => {
+    memoryClient.Read(
+      {
+        agent_id: "agent-001",
+        namespace: "default",
+        memory_type: "working",
+        entity_type: "context",
+        key: "nonexistent",
+      },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(response.found).toBe(false);
+        done();
+      }
+    );
+  });
+});
+
+describe("Contract: api-server → namespace-service", () => {
+  let nsPort: number;
+  let nsClient: any;
+  let server: grpc.Server;
+
+  const nsProto = loadProto("egaop/v1/namespace.proto");
+
+  beforeAll(async () => {
+    const nsImpl = {
+      CreateNamespace: (call: any, callback: any) => {
+        callback(null, {
+          id: "ns-001",
+          slug: call.request.slug || "test-ns",
+          display_name: call.request.display_name || "Test NS",
+          tier: "NAMESPACE_TIER_STANDARD",
+          owner_id: call.request.owner_id || "user-001",
+          quotas: call.request.quotas || { max_agents: 10, max_concurrent_executions: 5 },
+          created_at: { seconds: Math.floor(Date.now() / 1000) },
+        });
+      },
+      GetNamespace: (call: any, callback: any) => {
+        callback(null, {
+          id: "ns-001",
+          slug: call.request.slug,
+          display_name: "Test NS",
+          tier: "NAMESPACE_TIER_STANDARD",
+        });
+      },
+      ListNamespaces: (call: any, callback: any) => {
+        callback(null, {
+          namespaces: [],
+          next_page_token: "",
+          total_count: 0,
+        });
+      },
+    };
+
+    const { server: srv, port } = await startServer(nsProto.egaop.v1.NamespaceService.service, nsImpl);
+    server = srv;
+    nsPort = port;
+    nsClient = new nsProto.egaop.v1.NamespaceService(
+      `localhost:${port}`,
+      grpc.credentials.createInsecure()
+    );
+  });
+
+  afterAll(() => server.forceShutdown());
+
+  it("CreateNamespace returns namespace with slug and tier", (done) => {
+    nsClient.CreateNamespace(
+      {
+        slug: "my-team",
+        display_name: "My Team",
+        tier: "NAMESPACE_TIER_STANDARD",
+        owner_id: "user-001",
+      },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(response.slug).toBe("my-team");
+        expect(response.tier).toBe("NAMESPACE_TIER_STANDARD");
+        expect(typeof response.id).toBe("string");
+        done();
+      }
+    );
+  });
+
+  it("GetNamespace returns namespace by slug", (done) => {
+    nsClient.GetNamespace(
+      { slug: "my-team" },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(response.slug).toBe("my-team");
+        expect(response.display_name).toBe("Test NS");
+        done();
+      }
+    );
+  });
+
+  it("ListNamespaces returns paginated response", (done) => {
+    nsClient.ListNamespaces(
+      { owner_id: "user-001", page_size: 10 },
+      (err: any, response: any) => {
+        expect(err).toBeNull();
+        expect(Array.isArray(response.namespaces)).toBe(true);
+        expect(typeof response.next_page_token).toBe("string");
+        expect(typeof response.total_count).toBe("number");
+        done();
+      }
+    );
+  });
+});

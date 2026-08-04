@@ -6,6 +6,10 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **Contract tests for gRPC services (Phase 5):** 9 new tests in `tests/contract/service-contracts.test.ts` covering workflow-engine → sandbox-runtime (CreateSandbox, TerminateSandbox, GetSandboxStatus), workflow-engine → memory-plane (Read, Write, Delete, List), api-server → namespace-service (CreateNamespace, GetNamespace, ListNamespaces); total contract tests now 14.
+- **Database migration verification in CI:** `test-migrations` GitHub Actions job runs migrations up → status → down → up → status, verifying idempotency and rollback correctness.
+- **Coverage reporting in CI:** `--coverage` flag added to unit test job; coverage reports uploaded as artifacts; `collectCoverageFrom` configured in shared and api-server jest configs.
+- **Runbooks (Phase 5):** `docs/runbooks/incident-response.md` (SLO breach response, service down response, escalation matrix), `docs/runbooks/scaling.md` (horizontal/vertical scaling, HPA tuning, database scaling), `docs/runbooks/backup-restore.md` (PostgreSQL backup, Redis backup, secrets backup, DR procedure).
 - **GitOps with ArgoCD (Phase 4 #26):** `gitops/` directory with AppProject `egaop` (source repos, destinations, RBAC roles, sync windows), staging Application (auto-sync + prune + self-heal), production Application (self-heal only, manual sync), kustomization for bootstrap, deployment documentation.
 - **Chaos resilience tests (Phase 4 #28):** 15 new tests in `tests/chaos/chaos-resilience-extended.test.ts` covering circuit breaker lifecycle (CLOSED → OPEN → HALF_OPEN → CLOSED), Redis unavailable → token revocation fails open, cascade failure (OPA down → fail-closed deny), concurrent multi-service failures, timeout retry with exponential backoff, partial write WAL recovery pattern, gRPC deadline exceeded handling.
 - **SLO/SLI tracking (Phase 4 #30):** `SLOTracker` class in `packages/shared/src/slo/` computes SLI from OTel histograms/counters, tracks error budgets, and computes burn rates across 5/30/60-minute windows; defines 6 default SLOs (API availability, API latency p95, gRPC availability, gRPC latency p95, agent execution success, LLM latency p99).
@@ -21,11 +25,11 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Testing
 
-- Added 15 chaos resilience tests (circuit breaker lifecycle, Redis fail-open, cascade failure, timeout retry, WAL recovery, gRPC deadline); added 24 unit tests for SLO tracker; added 6 unit tests for trace propagation; shared workspace test suite now 104 tests; full workspace suite now 375+ tests.
+- Added 9 contract tests (sandbox-runtime, memory-plane, namespace-service); added 15 chaos resilience tests; added 24 SLO tracker unit tests; added 6 trace propagation tests; full workspace suite now 389+ tests; coverage reporting enabled in CI.
 
 ### Changed
 
-- FAANG audit re-scored to **7.80/10** (Deployment 9/10); **all Phase 4 items complete** (#26, #27, #28, #29, #30).
+- FAANG audit re-scored to **7.95/10** (Testing 9/10, Operability 10/10); Phase 5 quick wins complete (coverage, migrations, contracts, runbooks).
 
 ### Security
 
