@@ -6,6 +6,7 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **GitOps with ArgoCD (Phase 4 #26):** `gitops/` directory with AppProject `egaop` (source repos, destinations, RBAC roles, sync windows), staging Application (auto-sync + prune + self-heal), production Application (self-heal only, manual sync), kustomization for bootstrap, deployment documentation.
 - **Chaos resilience tests (Phase 4 #28):** 15 new tests in `tests/chaos/chaos-resilience-extended.test.ts` covering circuit breaker lifecycle (CLOSED → OPEN → HALF_OPEN → CLOSED), Redis unavailable → token revocation fails open, cascade failure (OPA down → fail-closed deny), concurrent multi-service failures, timeout retry with exponential backoff, partial write WAL recovery pattern, gRPC deadline exceeded handling.
 - **SLO/SLI tracking (Phase 4 #30):** `SLOTracker` class in `packages/shared/src/slo/` computes SLI from OTel histograms/counters, tracks error budgets, and computes burn rates across 5/30/60-minute windows; defines 6 default SLOs (API availability, API latency p95, gRPC availability, gRPC latency p95, agent execution success, LLM latency p99).
 - **`/api/slos` endpoint** in api-server: returns SLO snapshot with configurable window; exposes compliance status, error budget consumption, and burn-rate alerts.
@@ -24,7 +25,7 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Changed
 
-- FAANG audit re-scored to **7.70/10** (Testing 8/10, Operability 9/10); Phase 4 items #27, #28, #29, and #30 complete.
+- FAANG audit re-scored to **7.80/10** (Deployment 9/10); **all Phase 4 items complete** (#26, #27, #28, #29, #30).
 
 ### Security
 

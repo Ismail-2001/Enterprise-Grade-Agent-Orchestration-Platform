@@ -1,0 +1,87 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: egaop
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Enterprise-Grade Agent Orchestration Platform
+
+  sourceRepos:
+    - "https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents"
+    - "https://charts.bitnami.com/bitnami"
+    - "https://temporalio.github.io/helm-charts"
+
+  destinations:
+    - namespace: egaop-staging
+      server: https://kubernetes.default.svc
+    - namespace: egaop-production
+      server: https://kubernetes.default.svc
+    - namespace: egaop
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: "*"
+    - group: apps
+      kind: "*"
+    - group: batch
+      kind: "*"
+    - group: networking.k8s.io
+      kind: "*"
+    - group: policy
+      kind: "*"
+    - group: autoscaling
+      kind: "*"
+    - group: rbac.authorization.k8s.io
+      kind: "*"
+    - group: argoproj.io
+      kind: "*"
+    - group: monitoring.coreos.com
+      kind: "*"
+
+  orphanedResources:
+    warn: true
+
+  roles:
+    - name: ci
+      description: CI pipeline role — can sync applications
+      policies:
+        - p, proj:egaop:ci, applications, sync, egaop/*, allow
+        - p, proj:egaop:ci, applications, get, egaop/*, allow
+      groups:
+        - ci-egaop
+
+    - name: developer
+      description: Developer role — can view and sync, cannot delete
+      policies:
+        - p, proj:egaop:developer, applications, get, egaop/*, allow
+        - p, proj:egaop:developer, applications, sync, egaop/*, allow
+        - p, proj:egaop:developer, applications, action/*, egaop/*, allow
+      groups:
+        - dev-egaop
+
+  syncWindows:
+    - kind: allow
+      schedule: "0 2 * * *"
+      duration: 4h
+      applications:
+        - "*"
+      manualSync: true
+      namespaces:
+        - egaop-staging
+
+    - kind: deny
+      schedule: "0 0 * * 1-5"
+      duration: 8h
+      applications:
+        - "egaop-production"
+      manualSync: false
+      namespaces:
+        - egaop-production
+      timezone: UTC

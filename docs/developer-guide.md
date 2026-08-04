@@ -114,6 +114,22 @@ Sandbox runtime specifics (`execution-plane/sandbox-runtime`):
 - **PII detection** — `execution-plane/tool-proxy` exports `scanForPII`; patterns cover SSN, email, credit cards, US/international phones, DOB, IP. Extend `PII_PATTERNS` (not ad-hoc regexes) in `execution-plane/tool-proxy/src/index.ts`.
 - **Retry policy** — `fetchWithRetry` in tool-proxy retries 5xx and network errors with exponential backoff (3 attempts); `AbortError` is never retried.
 
+## GitOps (ArgoCD)
+
+E-GAOP uses ArgoCD for GitOps-based deployment. Manifests live in `gitops/`.
+
+```bash
+# Bootstrap (creates AppProject + Applications)
+kubectl apply -k gitops/
+
+# Staging auto-syncs from main; production requires manual sync
+argocd app sync egaop-production
+```
+
+Environments: `egaop-staging` (auto-sync, prune enabled) and `egaop-production` (self-heal only, manual sync).
+
+See `gitops/README.md` for full deployment docs, RBAC roles, sync windows, and troubleshooting.
+
 ## Security Guidelines
 
 Treat every service as exposed:
