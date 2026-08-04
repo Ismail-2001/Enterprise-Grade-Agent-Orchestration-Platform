@@ -6,6 +6,7 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **Chaos resilience tests (Phase 4 #28):** 15 new tests in `tests/chaos/chaos-resilience-extended.test.ts` covering circuit breaker lifecycle (CLOSED → OPEN → HALF_OPEN → CLOSED), Redis unavailable → token revocation fails open, cascade failure (OPA down → fail-closed deny), concurrent multi-service failures, timeout retry with exponential backoff, partial write WAL recovery pattern, gRPC deadline exceeded handling.
 - **SLO/SLI tracking (Phase 4 #30):** `SLOTracker` class in `packages/shared/src/slo/` computes SLI from OTel histograms/counters, tracks error budgets, and computes burn rates across 5/30/60-minute windows; defines 6 default SLOs (API availability, API latency p95, gRPC availability, gRPC latency p95, agent execution success, LLM latency p99).
 - **`/api/slos` endpoint** in api-server: returns SLO snapshot with configurable window; exposes compliance status, error budget consumption, and burn-rate alerts.
 - **Prometheus alerting rules** for SLO burn rates: 5-min (14.4x) page, 30-min (6x) page, 60-min (3x) ticket alerts; availability below 99.9%, p95 latency above 1s, and error budget exhaustion alerts.
@@ -19,11 +20,11 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Testing
 
-- Added 24 unit tests for SLO tracker (define/record, availability SLI, latency SLI, burn rates, window filtering, snapshot, clear/reset, DEFAULT_SLO_DEFINITIONS); added 6 unit tests for trace propagation; shared workspace test suite now 104 tests; full workspace suite now 360+ tests.
+- Added 15 chaos resilience tests (circuit breaker lifecycle, Redis fail-open, cascade failure, timeout retry, WAL recovery, gRPC deadline); added 24 unit tests for SLO tracker; added 6 unit tests for trace propagation; shared workspace test suite now 104 tests; full workspace suite now 375+ tests.
 
 ### Changed
 
-- FAANG audit re-scored to **7.55/10** (Observability 9/10, Testing 7/10, Operability 8/10); Phase 4 items #27, #29, and #30 complete.
+- FAANG audit re-scored to **7.70/10** (Testing 8/10, Operability 9/10); Phase 4 items #27, #28, #29, and #30 complete.
 
 ### Security
 
