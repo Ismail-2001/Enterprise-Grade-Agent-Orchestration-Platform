@@ -51,11 +51,11 @@ interface SecretSpec {
 const REQUIRED_SECRETS: SecretSpec[] = [
   { name: "EGAOP_MASTER_ENCRYPTION_KEY", minLength: 64, requireEntropy: false },
   { name: "JWT_SECRET", minLength: 64, requireEntropy: true },
-  { name: "POSTGRES_PASSWORD", minLength: 16 },
+  { name: "POSTGRES_PASSWORD", minLength: 24 },
   { name: "OPENAI_API_KEY", minLength: 10 },
-  { name: "GRAFANA_PASSWORD", minLength: 16 },
-  { name: "INTERNAL_SERVICE_TOKEN", minLength: 32 },
-  { name: "REDIS_PASSWORD", minLength: 16 },
+  { name: "GRAFANA_PASSWORD", minLength: 24 },
+  { name: "INTERNAL_SERVICE_TOKEN", minLength: 48 },
+  { name: "REDIS_PASSWORD", minLength: 24 },
 ];
 
 function validateValue(spec: SecretSpec, value: string): string | null {

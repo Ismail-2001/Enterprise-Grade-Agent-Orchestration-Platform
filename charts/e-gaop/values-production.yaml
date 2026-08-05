@@ -153,3 +153,71 @@ observability-plane:
   replicas: 2
 admin-console:
   replicas: 2
+
+# ─── OPA (production) ──────────────────────────────────────────────────────
+opa:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ─── OTel Collector (production) ───────────────────────────────────────────
+otelCollector:
+  enabled: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# ─── Grafana (production) ──────────────────────────────────────────────────
+grafana:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: fast-ssd
+  admin:
+    existingSecret: egaop-grafana-credentials
+    userKey: admin-user
+    passwordKey: admin-password
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: egaop
+          orgId: 1
+          folder: E-GAOP
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/egaop
+
+# ─── Prometheus (production) ───────────────────────────────────────────────
+prometheus:
+  server:
+    retention: 90d
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: fast-ssd
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+# ─── PodDisruptionBudget (production) ──────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

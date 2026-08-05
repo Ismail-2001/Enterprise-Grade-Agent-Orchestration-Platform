@@ -12,7 +12,7 @@
 [![Tests](https://img.shields.io/badge/tests-330%20passing-brightgreen)](#quality-gates)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen)](SECURITY.md)
 [![Readiness](https://img.shields.io/badge/production%20readiness-97%25-brightgreen)](#current-status)
-[![mTLS](https://img.shields.io/badge/mTLS-enabled-blue)](packages/shared/src/tls.ts)
+[![mTLS](https://img.shields.io/badge/mTLS-disabled_(upstream_bug)-orange)](packages/shared/src/tls.ts)
 [![Helm](https://img.shields.io/badge/Helm-11%20sub--charts-blue)](charts/e-gaop/)
 [![Last commit](https://img.shields.io/github/last-commit/Ismail-2001/The-Kubernetes-of-AI-Agents)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
 [![Repo size](https://img.shields.io/github/repo-size/Ismail-2001/The-Kubernetes-of-AI-Agents)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)

@@ -76,7 +76,9 @@ ingress:
   className: nginx
   adminHost: admin.egaop.dev
   apiHost: api.egaop.dev
+  grpcHost: grpc.egaop.dev
   certManagerIssuer: letsencrypt-prod
+  certManagerEmail: admin@egaop.dev
   rateLimit: "100"
 
 # ─── Community Charts (infrastructure) ──────────────────────────────────────
@@ -185,6 +187,11 @@ defaults:
     runAsNonRoot: true
     runAsUser: 1001
     fsGroup: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 # ─── Service Overrides ──────────────────────────────────────────────────────
 # tls.certManager.enabled is inherited by each subchart from global defaults.
