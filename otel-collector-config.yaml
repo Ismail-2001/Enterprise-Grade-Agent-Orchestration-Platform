@@ -29,6 +29,10 @@ exporters:
   otlp:
     endpoint: tempo:4317
     tls:
+      # Production: set to false and configure cert/key paths
+      # insecure: false
+      # cert_file: /etc/otelcol/certs/tls.crt
+      # key_file: /etc/otelcol/certs/tls.key
       insecure: true
   prometheus:
     endpoint: "0.0.0.0:8889"

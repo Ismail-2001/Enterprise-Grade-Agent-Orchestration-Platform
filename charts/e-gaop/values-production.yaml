@@ -54,7 +54,7 @@ admin-console:
 externalSecrets:
   enabled: true
   vault:
-    address: "https://vault.egaop.io:8200"
+    address: "https://vault.egaop.io:8200"  # Replace with actual Vault address
     path: "secret/data/egaop"
     kubernetesMountPath: "kubernetes"
     kubernetesRole: "egaop"
@@ -63,6 +63,9 @@ externalSecrets:
 # ─── Redis HA (Sentinel) ────────────────────────────────────────────────────
 redis:
   architecture: replication
+  auth:
+    existingSecret: egaop-redis-credentials
+    existingSecretPasswordKey: redis-password
   sentinel:
     enabled: true
     masterSet: egaop-master
@@ -76,6 +79,11 @@ redis:
 
 # ─── PostgreSQL HA ──────────────────────────────────────────────────────────
 postgresql:
+  auth:
+    existingSecret: egaop-postgres-credentials
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
   primary:
     persistence:
       size: 50Gi

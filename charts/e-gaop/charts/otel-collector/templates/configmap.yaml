@@ -62,6 +62,7 @@ data:
       otlp/temporal:
         endpoint: temporal:7233
         tls:
+          # Temporal OTLP does not use TLS by default; enable for mTLS deployments
           insecure: true
 
     extensions:

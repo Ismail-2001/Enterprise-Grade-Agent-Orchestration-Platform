@@ -24,7 +24,7 @@ If you discover a security issue in E-GAOP, please report it privately:
 - JWT authentication for API access
 - Encrypted secret storage (AES-256-GCM, Postgres-backed)
 - Sandbox network isolation (egaop-sandbox internal network)
-- TLS encryption for gRPC (mTLS not yet active — known limitation)
+- TLS encryption for gRPC (mTLS partially active — server requests client certs but verification blocked by @grpc/grpc-js v1.14.4 bug)
 
 ## What's Not Implemented
 

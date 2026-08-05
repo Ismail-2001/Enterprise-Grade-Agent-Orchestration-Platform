@@ -22,6 +22,10 @@ tls:
   certManager:
     enabled: false
 
+certManager:
+  enabled: false
+  email: platform@egaop.dev
+
 # ─── ServiceAccount & RBAC ──────────────────────────────────────────────────
 # Creates a dedicated ServiceAccount with minimal RBAC (read configmaps/secrets/pods).
 serviceAccount:
@@ -38,6 +42,22 @@ externalSecrets:
     kubernetesMountPath: "kubernetes"
     kubernetesRole: "egaop"
     secretsPath: "secret/data/egaop"
+
+# ─── Vault (dev/test only — production uses managed Vault or external chart) ──
+vault:
+  enabled: false
+  devRootTokenId: ""
+  persistence:
+    enabled: false
+    size: 2Gi
+    storageClassName: ""
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
 
 # ─── Managed secrets (used when externalSecrets.enabled=false) ──────────────
 # WARNING: For development only. Production MUST use External Secrets Operator.

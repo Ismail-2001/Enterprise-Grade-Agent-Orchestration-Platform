@@ -20,6 +20,7 @@ spec:
     - hosts:
         - {{ .Values.ingress.adminHost | quote }}
         - {{ .Values.ingress.apiHost | quote }}
+        - {{ .Values.ingress.grpcHost | default "grpc.egaop.dev" | quote }}
       secretName: {{ include "e-gaop.fullname" . }}-tls
   rules:
     - host: {{ .Values.ingress.adminHost | quote }}
@@ -42,4 +43,14 @@ spec:
                 name: {{ .Release.Name }}-api-server
                 port:
                   number: {{ index .Values "api-server" "restPort" | default 3001 }}
+    - host: {{ .Values.ingress.grpcHost | default "grpc.egaop.dev" | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-api-server
+                port:
+                  number: {{ index .Values "api-server" "grpcPort" | default 50051 }}
 {{- end }}
