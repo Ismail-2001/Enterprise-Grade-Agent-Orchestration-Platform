@@ -6,6 +6,27 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 ### Added
 
+- **Production secrets checklist:** `PRODUCTION-SECRETS-CHECKLIST.md` with every secret that must be generated/rotated before deployment, Kubernetes secret creation commands, pre/post-deployment verification steps.
+
+### Security
+
+- **Tighter secret minimums:** `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `GRAFANA_PASSWORD` now require ≥24 chars (was 16); `INTERNAL_SERVICE_TOKEN` requires ≥48 chars (was 32); `MASTER_KEY` and `JWT_SECRET` require ≥64 chars (entropy ≥4.3).
+- **OTel collector TLS configurable:** `OTEL_EXPORTER_OTLP_INSECURE` env var (default `true`) controls TLS verification; set to `false` in production with valid certs.
+- **Pod security hardened:** Default `securityContext` now includes `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`.
+- **Let's Encrypt ClusterIssuer:** Added to Helm chart templates, conditional on `ingress.certManagerIssuer`; requires cert-manager CRDs pre-installed.
+- **mTLS badge corrected:** README badge now reflects actual status (disabled due to `@grpc/grpc-js` v1.14.4 upstream bug).
+
+### Changed
+
+- **Helm ingress:** Added `grpcHost` field for gRPC ingress routing; `certManagerEmail` added for Let's Encrypt registration.
+- **Production values:** Added OPA, OTel collector, Grafana, Prometheus, and PodDisruptionBudget production overrides with HA replicas, persistent storage, and resource limits.
+
+### Fixed
+
+- **PrometheusRule template:** Escaped `{{ $labels.xxx }}` Prometheus template syntax for Helm/Go compatibility.
+
+### Added
+
 - **Contract tests for gRPC services (Phase 5):** 9 new tests in `tests/contract/service-contracts.test.ts` covering workflow-engine → sandbox-runtime (CreateSandbox, TerminateSandbox, GetSandboxStatus), workflow-engine → memory-plane (Read, Write, Delete, List), api-server → namespace-service (CreateNamespace, GetNamespace, ListNamespaces); total contract tests now 14.
 - **Database migration verification in CI:** `test-migrations` GitHub Actions job runs migrations up → status → down → up → status, verifying idempotency and rollback correctness.
 - **Coverage reporting in CI:** `--coverage` flag added to unit test job; coverage reports uploaded as artifacts; `collectCoverageFrom` configured in shared and api-server jest configs.
