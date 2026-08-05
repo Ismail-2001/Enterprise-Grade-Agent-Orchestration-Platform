@@ -540,20 +540,4 @@ spec:
     name: {{ include "e-gaop.fullname" . }}-internal-ca
     kind: ClusterIssuer
 {{- end }}
-{{- if .Values.ingress.certManagerIssuer }}
----
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: {{ .Values.ingress.certManagerIssuer }}
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: {{ .Values.ingress.certManagerEmail | default "admin@egaop.dev" }}
-    privateKeySecretRef:
-      name: {{ .Values.ingress.certManagerIssuer }}-account-key
-    solvers:
-      - http01:
-          ingress:
-            class: {{ .Values.ingress.className | default "nginx" }}
-{{- end }}
+

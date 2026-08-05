@@ -20,6 +20,8 @@ All notable changes to E-GAOP are documented here. Format follows [Keep a Change
 
 - **Helm ingress:** Added `grpcHost` field for gRPC ingress routing; `certManagerEmail` added for Let's Encrypt registration.
 - **Production values:** Added OPA, OTel collector, Grafana, Prometheus, and PodDisruptionBudget production overrides with HA replicas, persistent storage, and resource limits.
+- **ClusterIssuer split out:** Let's Encrypt ClusterIssuer moved from `networkpolicy.yaml` to dedicated `templates/cluster-issuer.yaml`.
+- **SLO alert rules enabled in production:** `prometheusRules.enabled: true` in `values-production.yaml`; stays disabled by default for kind smoke tests (CRD-gated).
 
 ### Fixed
 

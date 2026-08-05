@@ -151,6 +151,8 @@ memory-plane:
   replicas: 2
 observability-plane:
   replicas: 2
+  prometheusRules:
+    enabled: true
 admin-console:
   replicas: 2
 
