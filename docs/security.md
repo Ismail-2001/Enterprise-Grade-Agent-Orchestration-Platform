@@ -71,7 +71,7 @@ Workflow files (`ci.yml`, `deploy.yml`) exist but have **never been triggered**.
 
 TLS encryption is active (`TLS_ENABLED=true` in `.env`). The code at `packages/shared/src/tls.ts` implements `getServerCredentials` and `getClientCredentials` using real CA/server/client certificates. However:
 
-- **mTLS is disabled**: `requestCert: false` workaround due to `@grpc/grpc-js` v1.14.4 bug (client connections fail when server requests client certs)
+- **mTLS disabled by default**: TLS-only mode (`requestCert: false`) is the safe default since `@grpc/grpc-js` v1.14.4 cannot complete an HTTP/2 handshake when the server sets `requestCert: true` — the client cert is presented and verified at the TLS layer, but the server-side HTTP/2 session never establishes (verified empirically against Node 24). Server-side enforcement works: clients without a valid certificate are correctly rejected with `SSL alert certificate required`. Opt-in via `MTLS_ENABLED=true` (experimental).
 - **No cert rotation**: Certs in `certs/` are static
 - **Not re-verified live** in the most recent validation round (Docker daemon was wedged)
 
@@ -91,7 +91,7 @@ The observability plane records step-level events (tool execution, LLM call, pol
 |-----|----------|--------|
 | CI/CD execution | High | Not started |
 | Penetration testing | Medium | Not started |
-| mTLS enablement | Medium | Partially done (blocked by upstream grpc-js bug) |
+| mTLS enablement | Medium | Blocked — server-side enforcement works; grpc-js client-cert handshake fails (upstream bug). TLS-only default. |
 | Cert rotation | Medium | Not started |
 | Formal audit log | Low | Basic implementation exists |
 | RBAC completeness | Low | Partially done |

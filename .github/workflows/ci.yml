@@ -509,13 +509,171 @@ jobs:
           done
 
   #############################################################################
+  # INTEGRATION — kind cluster deploy + health-check (main only)
+  #############################################################################
+  kind-deploy:
+    name: Kind Deploy
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    if: github.event_name == 'push'
+    needs: [test-unit, test-cross-cutting, helm-lint, docker-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: egaop-ci
+          config: |
+            kind: Cluster
+            apiVersion: kind.x-k8s.io/v1alpha4
+            nodes:
+              - role: control-plane
+                extraPortMappings:
+                  - containerPort: 3001
+                    hostPort: 3001
+                    protocol: TCP
+
+      - name: Build Docker images
+        run: |
+          # Build all service images locally for kind loading
+          # (cannot reuse GHCR images — kind clusters need local images)
+          services=(
+            "api-server:control-plane/api-server/Dockerfile"
+            "secret-store:control-plane/secret-store/Dockerfile"
+            "workflow-engine:control-plane/workflow-engine/Dockerfile"
+            "llm-router:execution-plane/llm-router/Dockerfile"
+            "tool-proxy:execution-plane/tool-proxy/Dockerfile"
+            "sandbox-runtime:execution-plane/sandbox-runtime/Dockerfile"
+            "memory-plane:memory-plane/Dockerfile"
+            "observability-plane:observability-plane/Dockerfile"
+            "admin-console:admin-console/Dockerfile"
+          )
+          for entry in "${services[@]}"; do
+            svc="${entry%%:*}"
+            df="${entry##*:}"
+            echo "--- Building egaop/$svc:ci ---"
+            docker build -f "$df" -t "egaop/$svc:ci" . || {
+              echo "FAIL: $svc" >&2; exit 1
+            }
+          done
+          # Build base-runtime (required by sandbox-runtime)
+          echo "--- Building egaop-base-runtime:ci ---"
+          docker build -f execution-plane/sandbox-runtime/base-runtime/Dockerfile \
+            -t egaop-base-runtime:ci .
+
+      - name: Load images into kind
+        run: |
+          images=(
+            egaop/api-server:ci
+            egaop/secret-store:ci
+            egaop/workflow-engine:ci
+            egaop/llm-router:ci
+            egaop/tool-proxy:ci
+            egaop/sandbox-runtime:ci
+            egaop/memory-plane:ci
+            egaop/observability-plane:ci
+            egaop/admin-console:ci
+            egaop-base-runtime:ci
+          )
+          for img in "${images[@]}"; do
+            echo "Loading $img..."
+            kind load docker-image --name egaop-ci "$img"
+          done
+
+      - name: Helm dependency update
+        run: helm dependency update charts/e-gaop --skip-refresh || echo "Using pre-packaged chart dependencies"
+
+      - name: Deploy to kind cluster
+        run: |
+          helm upgrade egaop-test charts/e-gaop \
+            --namespace default \
+            --install \
+            --wait \
+            --timeout 5m \
+            --set api-server.image=egaop/api-server --set api-server.tag=ci \
+            --set secret-store.image=egaop/secret-store --set secret-store.tag=ci \
+            --set workflow-engine.image=egaop/workflow-engine --set workflow-engine.tag=ci \
+            --set llm-router.image=egaop/llm-router --set llm-router.tag=ci \
+            --set tool-proxy.image=egaop/tool-proxy --set tool-proxy.tag=ci \
+            --set sandbox-runtime.image=egaop/sandbox-runtime --set sandbox-runtime.tag=ci \
+            --set memory-plane.image=egaop/memory-plane --set memory-plane.tag=ci \
+            --set observability-plane.image=egaop/observability-plane --set observability-plane.tag=ci \
+            --set admin-console.image=egaop/admin-console --set admin-console.tag=ci \
+            --set api-server.hpa.enabled=false \
+            --set secret-store.hpa.enabled=false \
+            --set workflow-engine.hpa.enabled=false \
+            --set llm-router.hpa.enabled=false \
+            --set tool-proxy.hpa.enabled=false \
+            --set sandbox-runtime.hpa.enabled=false \
+            --set memory-plane.hpa.enabled=false \
+            --set observability-plane.hpa.enabled=false \
+            --set admin-console.hpa.enabled=false
+
+      - name: Wait for deployments
+        run: |
+          echo "Waiting for all deployments to roll out..."
+          kubectl rollout status deployment/egaop-test-api-server       --timeout=120s
+          kubectl rollout status deployment/egaop-test-secret-store     --timeout=120s
+          kubectl rollout status deployment/egaop-test-workflow-engine  --timeout=120s
+          kubectl rollout status deployment/egaop-test-llm-router       --timeout=120s
+          kubectl rollout status deployment/egaop-test-tool-proxy       --timeout=120s
+          kubectl rollout status deployment/egaop-test-sandbox-runtime  --timeout=120s
+          kubectl rollout status deployment/egaop-test-memory-plane     --timeout=120s
+          kubectl rollout status deployment/egaop-test-observability-plane --timeout=120s
+          kubectl rollout status deployment/egaop-test-admin-console    --timeout=120s
+
+      - name: Health-check pods
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -o wide
+          echo ""
+          # Fail if any pod is in CrashLoopBackOff, Error, or Pending
+          bad=$(kubectl get pods --no-headers 2>&1 \
+            | grep -E "CrashLoopBackOff|Error|Pending|Init:Error" || true)
+          if [ -n "$bad" ]; then
+            echo "FAIL: Unhealthy pods detected:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "All pods healthy"
+
+      - name: Health-check API endpoint
+        run: |
+          echo "Waiting for api-server to become ready on :3001..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/health > /dev/null 2>&1; then
+              echo "api-server healthy after ${i} attempts"
+              curl -fsS http://localhost:3001/health
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: api-server did not become healthy"
+          kubectl logs deployment/egaop-test-api-server --tail=50
+          exit 1
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          for deploy in api-server secret-store workflow-engine llm-router tool-proxy \
+                         sandbox-runtime memory-plane observability-plane admin-console; do
+            echo "--- egaop-test-$deploy ---"
+            kubectl logs "deployment/egaop-test-$deploy" --tail=20 2>/dev/null || true
+          done
+
+      - name: Cleanup kind cluster
+        if: always()
+        run: kind delete cluster --name egaop-ci
+
+  #############################################################################
   # SUMMARY
   #############################################################################
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-22.04
     if: always()
-    needs: [audit, lint, typecheck, helm-lint, test-unit, test-migrations, test-cross-cutting, load-test, docker-build, docker-compose-validate]
+    needs: [audit, lint, typecheck, helm-lint, test-unit, test-migrations, test-cross-cutting, load-test, docker-build, docker-compose-validate, kind-deploy]
     steps:
       - run: |
           echo "## CI Summary" >> $GITHUB_STEP_SUMMARY
@@ -532,5 +690,6 @@ jobs:
           echo "| Load Test (k6) | ${{ needs.load-test.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Images | ${{ needs.docker-build.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Compose Validate | ${{ needs.docker-compose-validate.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kind Deploy | ${{ needs.kind-deploy.result == 'success' && '✅' || (needs.kind-deploy.result == 'skipped' && '⏭️') || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Commit: \`${{ github.sha }}\` on \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY

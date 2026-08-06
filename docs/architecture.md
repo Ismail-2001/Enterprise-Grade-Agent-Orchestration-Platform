@@ -121,7 +121,7 @@ The platform is organized into five independent planes, each with a single respo
 
 - **gVisor/runsc not installed** — Enhanced kernel-level isolation is not available. Docker namespaces are the only sandbox boundary.
 - **pgvector not deployed** — No vector/semantic memory. The memory plane serves Redis + PostgreSQL only.
-- **mTLS disabled** — TLS encryption works, but `@grpc/grpc-js` v1.14.4 bug prevents client-cert verification. `requestCert: false` workaround in place.
+- **mTLS disabled by default** — TLS encryption works (`TLS_ENABLED=true`), but `@grpc/grpc-js` v1.14.4 cannot complete an HTTP/2 handshake when the server sets `requestCert: true` (client cert is presented but the session dies). TLS-only mode (`requestCert: false`) is the safe default; mTLS is opt-in via `MTLS_ENABLED=true` (experimental).
 - **Helm chart partially broken** — OPA pod enters CrashLoopBackOff on install. See `charts/e-gaop/` for details.
 
 > Full readiness assessment: [`production-readiness-final.md`](production-readiness-final.md) (Security and Known Gaps sections).
