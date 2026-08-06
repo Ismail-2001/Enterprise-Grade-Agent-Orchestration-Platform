@@ -1,5 +1,8 @@
+import pino from "pino";
 import { getPool } from "@e-gaop/shared";
 import type { AgentResult } from "../types";
+
+const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
 export interface ReportOutcomeParams {
   agentId: string;
@@ -40,6 +43,6 @@ export async function reportOutcome(params: ReportOutcomeParams): Promise<void> 
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[DLQ] Failed to record outcome for ${params.executionId}: ${msg}`);
+    logger.error({ executionId: params.executionId, err: msg }, "DLQ: failed to record outcome");
   }
 }

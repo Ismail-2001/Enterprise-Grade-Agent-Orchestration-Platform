@@ -300,6 +300,7 @@ export async function reactWorkflow(
     });
     sandboxId = sandbox.id;
     sandboxIp = sandbox.ipAddress ?? "";
+    // eslint-disable-next-line no-console -- Temporal workflows use console.log for logging
     console.log(
       "Sandbox created with init output",
       sandboxId,
@@ -661,6 +662,7 @@ export async function reactWorkflow(
         });
       } catch (termErr: unknown) {
         const termMsg = termErr instanceof Error ? termErr.message : String(termErr);
+        // eslint-disable-next-line no-console -- Temporal workflows use console.log for logging
         console.log("Sandbox termination failed", sandboxId, termMsg);
       }
     }

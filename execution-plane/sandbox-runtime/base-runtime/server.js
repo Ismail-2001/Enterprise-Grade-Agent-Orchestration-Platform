@@ -131,5 +131,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
+  // eslint-disable-next-line no-console -- standalone sandbox server, no pino available
   console.log(`Sandbox agent listening on ${HOST}:${PORT}`);
 });
