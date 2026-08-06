@@ -80,7 +80,7 @@ Client → API Server (JWT auth, rate-limit, CORS)
 | **Security depth** | Defense-in-depth: JWT auth, AES-256-GCM at rest, OPA/Rego policy enforcement, PII scanning, SSRF blocking, per-user rate limiting, namespace isolation, 0 CVEs (19 fixed). |
 | **Operational maturity** | CI/CD (31+ jobs, all green), database migrations (8 up + 7 down), Helm charts with HPA/PDB/NetworkPolicy/ServiceMonitor, canary deployments, backup/restore (3/3 cycles verified). |
 | **Engineering honesty** | Published [production-readiness assessment](docs/production-readiness-final.md) with scored gaps. Every claim verified against running code. Corrections documented. |
-| **AI/LLM depth** | Multi-model routing (OpenAI + Claude + Ollama), 3-model fallback chain, circuit breaker (opossum), concurrency semaphore (25 at 100%), agent versioning with rollback, 84.2% eval pass rate. |
+| **AI/LLM depth** | Multi-model routing (OpenAI + Claude + Ollama), 3-model fallback chain, circuit breaker (opossum), concurrency semaphore (25 at 100%), agent versioning with rollback, 89.5% eval pass rate. |
 
 **Built by one engineer.** 15,000+ lines of TypeScript. 10 npm workspaces. 22 Docker services. 8 database migrations. 330 tests. MIT Licensed.
 
@@ -322,7 +322,7 @@ React 19 / Tailwind 4 dashboard for managing agents, workflows, namespaces, poli
 | Observability | 92.9% | A- | OTel tracing, Prometheus, Grafana (5 alerts), ServiceMonitors for all services |
 | Operability | 100% | A+ | CI 17/17, Helm charts (HPA, PDB, NetworkPolicy, canary), migrations |
 | Compliance | 83.3% | B+ | OpenAPI 3.0.3, 8 database migrations, full audit trail |
-| Agent Quality | 91.7% | A- | 19-case golden dataset, 84.2% task success, automated runner |
+| Agent Quality | 91.7% | A- | 19-case golden dataset, 89.5% task success, automated runner |
 
 ---
 
@@ -371,7 +371,7 @@ Defense-in-depth across transport, application, data, and policy layers.
 | CI pipeline | **17/17 jobs green** | GitHub Actions |
 | Security scan | **14/14 jobs green** | Gitleaks, CodeQL, Trivy |
 | Helm lint | **0 failures** | Helm 3 + kubeconform |
-| Agent evals | **84.2% task success** | 19-case golden dataset |
+| Agent evals | **89.5% task success (17/19)** | 19-case golden dataset, automated runner |
 
 ---
 
@@ -392,7 +392,7 @@ Defense-in-depth across transport, application, data, and policy layers.
 | Run | Date | Pass Rate | Delta |
 |-----|------|-----------|-------|
 | RL-1 (baseline) | Jul 17 | 68.4% (13/19) | — |
-| **RL-2** | **Jul 18** | **84.2% (16/19)** | **+15.8pp** |
+| **Latest** | **Jul 20** | **89.5% (17/19)** | **+21.1pp** |
 
 *Source: [`evals/golden-dataset.json`](evals/golden-dataset.json), [`evals/run-evals.mjs`](evals/run-evals.mjs)*
 

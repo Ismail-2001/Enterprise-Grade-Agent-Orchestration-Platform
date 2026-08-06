@@ -66,8 +66,19 @@ async function triggerRun(token, prompt, extra = {}) {
   const body = { namespace: extra.namespace || "default", input: { prompt, systemPrompt: SYSTEM_PROMPT } };
   if (extra.resourceNamespace) body.resourceNamespace = extra.resourceNamespace;
   if (extra.callerRole) body.callerRole = extra.callerRole;
-  const r = await api("POST", `/api/agents/${AGENT_ID}/run`, body, token);
-  return r.data;
+  const maxRetries = 2;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const r = await api("POST", `/api/agents/${AGENT_ID}/run`, body, token);
+      if (r?.data?.workflowId) return r.data;
+      // If no workflowId, the API call itself failed — retry
+      if (attempt < maxRetries) { await sleep(2000 * attempt); continue; }
+      return r?.data || r;
+    } catch (err) {
+      if (attempt < maxRetries) { await sleep(2000 * attempt); continue; }
+      throw err;
+    }
+  }
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

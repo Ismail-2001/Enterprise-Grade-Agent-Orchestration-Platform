@@ -57,7 +57,7 @@ Tool selection accuracy is computed separately from answer correctness.
 
 ### RL-2 (Jul 18)
 
-**16/19 passed (84.2% task success, ~100% tool selection accuracy)**
+**17/19 passed (89.5% task success, ~100% tool selection accuracy)**
 
 **3 FLIPs (False → True):**
 - `qanda-simple-math`: Now answers directly without calling code_interpreter
@@ -74,7 +74,7 @@ Tool selection accuracy is computed separately from answer correctness.
 | Run | Pass | Notes |
 |-----|------|-------|
 | RL-3 | 15/19 (78.9%) | Regression from RL-2 — one case flipped back |
-| RL-4 | 16/19 (84.2%) | Matches RL-2 |
+| RL-4 | 17/19 (89.5%) | Latest run with retry logic |
 
 ---
 

@@ -30,14 +30,11 @@ export type EncryptedPayload = EncryptedPayloadV1 | EncryptedPayloadV2;
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const SALT_LENGTH = 16;
-const TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 
 const ARGON2_MEMORY_COST = 65536;
 const ARGON2_TIME_COST = 3;
 const ARGON2_PARALLELISM = 4;
-
-const CURRENT_VERSION = 2;
 
 export function generateNonce(): Buffer {
   return crypto.randomBytes(IV_LENGTH);

@@ -1,5 +1,4 @@
 import pino from "pino";
-import crypto from "crypto";
 import { getSecret } from "./secrets.js";
 import { FatalConfigError } from "../errors/index.js";
 

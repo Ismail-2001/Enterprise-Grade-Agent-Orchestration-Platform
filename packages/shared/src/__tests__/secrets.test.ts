@@ -1,6 +1,5 @@
 import { getSecret, loadSecretsIntoEnv } from "../config/secrets.js";
 import fs from "fs";
-import path from "path";
 
 jest.mock("fs");
 

@@ -70,13 +70,13 @@ describe("Audit Module", () => {
     const chainId = "verify-test-chain";
     process.env.AUDIT_CHAIN_ID = chainId;
 
-    const e1 = createAuditEntry(
+    createAuditEntry(
       "auth.login",
       "info",
       { type: "user", id: "alice" },
       { name: "Login", result: "allowed" },
     );
-    const e2 = createAuditEntry(
+    createAuditEntry(
       "secret.access",
       "warn",
       { type: "service", id: "vault" },
@@ -94,13 +94,13 @@ describe("Audit Module", () => {
     const chainId = "tamper-test-chain";
     process.env.AUDIT_CHAIN_ID = chainId;
 
-    const e1 = createAuditEntry(
+    createAuditEntry(
       "auth.login",
       "info",
       { type: "user", id: "bob" },
       { name: "Login", result: "allowed" },
     );
-    const e2 = createAuditEntry(
+    createAuditEntry(
       "config.change",
       "warn",
       { type: "user", id: "admin" },

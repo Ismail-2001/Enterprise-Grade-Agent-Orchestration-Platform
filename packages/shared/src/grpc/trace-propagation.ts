@@ -2,7 +2,6 @@ import { context, trace, SpanStatusCode, type Span, type SpanKind } from "@opent
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import {
   type ServerInterceptor,
-  type ServerInterceptingCallInterface,
   type ServerMethodDefinition,
   type Metadata,
   ServerInterceptingCall,

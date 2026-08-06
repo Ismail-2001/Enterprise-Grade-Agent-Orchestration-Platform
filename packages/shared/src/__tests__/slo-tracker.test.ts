@@ -1,4 +1,4 @@
-import { SLOTracker, SLISample } from "../slo/index";
+import { SLOTracker } from "../slo/index";
 import { BURN_RATE_WINDOWS, DEFAULT_SLO_DEFINITIONS } from "../slo/types";
 
 describe("SLOTracker", () => {
@@ -237,7 +237,7 @@ describe("SLOTracker", () => {
     });
 
     it("each definition should have required fields", () => {
-      for (const [name, def] of Object.entries(DEFAULT_SLO_DEFINITIONS)) {
+      for (const [, def] of Object.entries(DEFAULT_SLO_DEFINITIONS)) {
         expect(def.metricName).toBeDefined();
         expect(["availability", "latency"]).toContain(def.type);
         expect(["otel", "manual", "prometheus"]).toContain(def.source);

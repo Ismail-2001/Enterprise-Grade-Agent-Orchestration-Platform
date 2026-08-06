@@ -1,9 +1,9 @@
-import { context, trace, diag, DiagConsoleLogger, DiagLogLevel, type Span, type Tracer } from "@opentelemetry/api";
+import { trace, diag, DiagConsoleLogger, DiagLogLevel, type Span, type Tracer } from "@opentelemetry/api";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
 import { CompressionAlgorithm } from "@opentelemetry/otlp-exporter-base";
-import { type Resource, resourceFromAttributes } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { GrpcInstrumentation } from "@opentelemetry/instrumentation-grpc";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";

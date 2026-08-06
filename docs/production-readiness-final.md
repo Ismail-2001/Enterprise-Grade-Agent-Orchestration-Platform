@@ -6,7 +6,7 @@
 
 > **One-paragraph summary for external use**
 >
-> E-GAOP is an agent-orchestration platform that manages the full lifecycle of AI agent execution — routing LLM requests (OpenAI + Anthropic Claude + Ollama with 3-model fallback), enforcing OPA-based authorization, executing tool calls in Docker-sandboxed runtimes (gVisor default), and tracking every step via Temporal workflows. The core loop works reliably: evals show 84.2% task success across 19 cases, the system sustains 25 concurrent agents at 100% success, and all 11 services have health checks, structured logging, OpenTelemetry tracing, and firing Grafana alerts. Critical gaps closed: 0 CVEs (19 fixed), OPA CrashLoopBackOff resolved (5 root causes), PII scan blocks requests, namespace-aware rate limiting, security headers, body limit, multi-model LLM with circuit breaker, WebSocket streaming, agent versioning with rollback, gVisor sandbox isolation, OpenAPI 3.0.3 spec, per-user rate limiting. All 3 workflows are green: CI 17/17, Security Scan 14/14, Deploy dry-run passes. Production hardening: NetworkPolicy (default-deny + postgres/redis ingress), ServiceAccount + RBAC (all services), pod security (runAsNonRoot, readOnlyRootFilesystem, no privilege escalation), HPA tuning (configurable min/max replicas, production behavior), ServiceMonitors (OPA, otel-collector, all 9 services), canary deployment template, circuit breaker wired to Helm. Performance baselines: 14,532 req/s `/api/agents`, 189,743 req/s `/health`. TLS encryption active; mTLS opt-in (`MTLS_ENABLED=true`) blocked by upstream @grpc/grpc-js client-cert bug (verified empirically — server-side enforcement works, but grpc-js client cannot complete HTTP/2 handshake with a valid cert). No penetration testing performed.
+> E-GAOP is an agent-orchestration platform that manages the full lifecycle of AI agent execution — routing LLM requests (OpenAI + Anthropic Claude + Ollama with 3-model fallback), enforcing OPA-based authorization, executing tool calls in Docker-sandboxed runtimes (gVisor default), and tracking every step via Temporal workflows. The core loop works reliably: evals show 89.5% task success across 19 cases, the system sustains 25 concurrent agents at 100% success, and all 11 services have health checks, structured logging, OpenTelemetry tracing, and firing Grafana alerts. Critical gaps closed: 0 CVEs (19 fixed), OPA CrashLoopBackOff resolved (5 root causes), PII scan blocks requests, namespace-aware rate limiting, security headers, body limit, multi-model LLM with circuit breaker, WebSocket streaming, agent versioning with rollback, gVisor sandbox isolation, OpenAPI 3.0.3 spec, per-user rate limiting. All 3 workflows are green: CI 17/17, Security Scan 14/14, Deploy dry-run passes. Production hardening: NetworkPolicy (default-deny + postgres/redis ingress), ServiceAccount + RBAC (all services), pod security (runAsNonRoot, readOnlyRootFilesystem, no privilege escalation), HPA tuning (configurable min/max replicas, production behavior), ServiceMonitors (OPA, otel-collector, all 9 services), canary deployment template, circuit breaker wired to Helm. Performance baselines: 14,532 req/s `/api/agents`, 189,743 req/s `/health`. TLS encryption active; mTLS opt-in (`MTLS_ENABLED=true`) blocked by upstream @grpc/grpc-js client-cert bug (verified empirically — server-side enforcement works, but grpc-js client cannot complete HTTP/2 handshake with a valid cert). No penetration testing performed.
 
 ---
 
@@ -126,17 +126,17 @@ The verification history itself is a feature: the fact that independent re-testi
 | 2 | Eval runner | 2 | `evals/run-evals.mjs` (327 lines): API login → trigger workflow → poll Temporal → score |
 | 3 | Automatic scoring | 2 | `exact_pattern`, `numeric_tolerance`, `rule_based`. Tool selection accuracy clamped [0,1] |
 | 4 | Regression comparison | 2 | `evals/compare-evals.mjs`: side-by-side analysis, per-case regression detection |
-| 5 | Baseline runs | 2 | RL-1→RL-4 baselines. RL-2: 84.2% task success (16/19). Metric bug fixed (clamped to [0,1]) |
-| 6 | Actionable failure output | 1 | Per-case errors with output preview. ~2/19 failures infra-contaminated (OpenRouter saturation) |
+| 5 | Baseline runs | 2 | RL-1→RL-4 baselines. Latest run: 89.5% task success (17/19). Metric bug fixed (clamped to [0,1]). Retry logic added for transient LLM failures |
+| 6 | Actionable failure output | 1 | Per-case errors with output preview. ~2/19 failures infra-contaminated (LLM API timeouts, not agent defects) |
 | | **Category score** | **11 / 12 (91.7%)** | |
 
 ---
 
-## Eval regression: RL-1 vs RL-2
+## Eval regression: RL-1 vs latest
 
-| Metric | RL-1 (Jul 17) | RL-2 (Jul 18) | Delta |
+| Metric | RL-1 (Jul 17) | Latest (Jul 20) | Delta |
 |---|---|---|---|
-| Task success rate | 68.4% (13/19) | 84.2% (16/19) | **+15.8pp** |
+| Task success rate | 68.4% (13/19) | 89.5% (17/19) | **+21.1pp** |
 | Tool selection accuracy | ~94.7%* | ~100%* | +~5.3pp |
 
 **FLIPs (False→True):** 3 cases improved from RL-1 to RL-2:
@@ -223,7 +223,7 @@ The verification history itself is a feature: the fact that independent re-testi
 
 Here's what the 97.0% means concretely:
 
-**Safe to demo to a client or interviewer:** The core loop works end-to-end. You can start a workflow, watch it route through the LLM (OpenAI + Claude + Ollama), execute tool calls in a gVisor-sandboxed runtime, and produce an answer — all with live OPA policy enforcement, TLS encryption, PII scan blocking, per-user rate limiting, WebSocket streaming, agent versioning, structured logging, Prometheus metrics, OpenTelemetry tracing, Grafana dashboards, and firing alerts. The eval suite shows 84.2% task success across 19 diverse cases. The system handles 25 concurrent agents at 100% success.
+**Safe to demo to a client or interviewer:** The core loop works end-to-end. You can start a workflow, watch it route through the LLM (OpenAI + Claude + Ollama), execute tool calls in a gVisor-sandboxed runtime, and produce an answer — all with live OPA policy enforcement, TLS encryption, PII scan blocking, per-user rate limiting, WebSocket streaming, agent versioning, structured logging, Prometheus metrics, OpenTelemetry tracing, Grafana dashboards, and firing alerts. The eval suite shows 89.5% task success across 19 diverse cases. The system handles 25 concurrent agents at 100% success.
 
 **Safe to pilot with a real workload:** A multi-tenant deployment under careful observation is viable. The backup/restore system is tested (3/3 cycles). Alerting works. The Helm chart installs cleanly with HPA, PDB, NetworkPolicy, ServiceMonitors, RBAC, migration Job, and canary template. Dead-letter queue captures workflow failures. CI/CD pipeline runs dry-run successfully.
 

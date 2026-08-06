@@ -18,11 +18,11 @@ const CODE_SCHEMA = z.object({
 }).strict();
 
 const PATH_SCHEMA = z.object({
-  path: z.string().min(1).max(4096).regex(/^[a-zA-Z0-9_\/\.\-]+$/).refine((p) => !p.includes(".."), "Path traversal blocked"),
+  path: z.string().min(1).max(4096).regex(/^[a-zA-Z0-9_/.-]+$/).refine((p) => !p.includes(".."), "Path traversal blocked"),
 }).strict();
 
 const FILE_WRITE_SCHEMA = z.object({
-  path: z.string().min(1).max(4096).regex(/^[a-zA-Z0-9_\/\.\-]+$/).refine((p) => !p.includes(".."), "Path traversal blocked"),
+  path: z.string().min(1).max(4096).regex(/^[a-zA-Z0-9_/.-]+$/).refine((p) => !p.includes(".."), "Path traversal blocked"),
   content: z.string().max(1_000_000),
 }).strict();
 

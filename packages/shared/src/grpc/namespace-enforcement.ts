@@ -6,10 +6,9 @@ import {
   type Metadata,
   type Requester,
   type InterceptingListener,
-  type StatusObject,
   status as GrpcStatus,
 } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerInterceptingCallInterface, ServerMethodDefinition } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition } from "@grpc/grpc-js";
 import { ServerInterceptingCall } from "@grpc/grpc-js";
 import { verifyJWT } from "../crypto";
 
@@ -19,8 +18,6 @@ interface InterceptingServerListener {
   onReceiveHalfClose(callback: () => void): void;
   onCancel(): void;
 }
-
-type StartCallback = (listener: InterceptingServerListener) => void;
 
 export interface NamespaceEnforcementConfig {
   jwtSecret?: string;

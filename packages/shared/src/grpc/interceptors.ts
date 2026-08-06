@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { Interceptor, InterceptingCall, InterceptorOptions, NextCall, Metadata, Requester, InterceptingListener, StatusObject, status as GrpcStatus } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerInterceptingCallInterface, ServerMethodDefinition } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition } from "@grpc/grpc-js";
 import { ServerInterceptingCall } from "@grpc/grpc-js";
 import { spanEnrichmentInterceptor } from "./span-enrichment.js";
 
@@ -80,7 +80,7 @@ function authInterceptor(): Interceptor {
   return (options: InterceptorOptions, nextCall: NextCall): InterceptingCall => {
     const token = process.env.INTERNAL_SERVICE_TOKEN ?? "";
     const requester: Requester = {
-      start(metadata: Metadata, listener: InterceptingListener): void {
+      start(metadata: Metadata, _listener: InterceptingListener): void {
         if (token) {
           metadata.set("x-service-token", token);
         }

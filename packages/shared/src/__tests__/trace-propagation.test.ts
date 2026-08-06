@@ -46,7 +46,7 @@ describe("createTraceServerInterceptor", () => {
     await exporter.shutdown();
   });
 
-  function startCall(metadata: Metadata, onReceiveMetadata?: (m: any) => void): { call: any; listener: any } {
+  function startCall(metadata: Metadata, onReceiveMetadata?: (_m: any) => void): { call: any; listener: any } {
     const fake = makeFakeCall();
     const interceptor = createTraceServerInterceptor();
     const methodDescriptor = { path: "/helloworld.Greeter/SayHello" } as any;
@@ -69,7 +69,7 @@ describe("createTraceServerInterceptor", () => {
     metadata.set("x-agent-id", "agent-42");
 
     const { call, listener } = startCall(metadata);
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
 
     call.sendStatus({ code: 0, details: "ok" }, () => {});
 
@@ -93,7 +93,7 @@ describe("createTraceServerInterceptor", () => {
   it("defaults namespace to 'default' when no metadata is present", () => {
     const metadata = new Metadata();
     const { call, listener } = startCall(metadata);
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
 
     call.sendStatus({ code: 0, details: "ok" }, () => {});
 
@@ -107,12 +107,12 @@ describe("createTraceServerInterceptor", () => {
     metadata.set("traceparent", `00-${TRACE_ID}-${PARENT_SPAN_ID}-01`);
 
     let childSpanContext: SpanContext | undefined;
-    const { call, listener } = startCall(metadata, (m: any) => {
+    const { call, listener } = startCall(metadata, (_m: any) => {
       const child = tracer.startSpan("handler-work");
       childSpanContext = child.spanContext();
       child.end();
     });
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
 
     call.sendStatus({ code: 0, details: "ok" }, () => {});
 
@@ -132,7 +132,7 @@ describe("createTraceServerInterceptor", () => {
     metadata.set("traceparent", `00-${TRACE_ID}-${PARENT_SPAN_ID}-01`);
 
     const { call, listener } = startCall(metadata);
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
 
     call.sendStatus({ code: 13, details: "internal error" }, () => {});
 
@@ -147,7 +147,7 @@ describe("createTraceServerInterceptor", () => {
     metadata.set("traceparent", `00-${TRACE_ID}-${PARENT_SPAN_ID}-01`);
 
     const { listener } = startCall(metadata);
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
     listener.onCancel();
 
     const span = exporter.getFinishedSpans()[0]!;
@@ -158,7 +158,7 @@ describe("createTraceServerInterceptor", () => {
   it("propagates no trace context when traceparent is absent (fresh root span)", () => {
     const metadata = new Metadata();
     const { call, listener } = startCall(metadata);
-    listener.onReceiveMetadata(metadata, (m: any) => {});
+    listener.onReceiveMetadata(metadata, (_m: any) => {});
 
     call.sendStatus({ code: 0, details: "ok" }, () => {});
 

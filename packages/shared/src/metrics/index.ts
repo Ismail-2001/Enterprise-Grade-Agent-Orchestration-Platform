@@ -7,7 +7,7 @@ import { getPrometheusExporter } from "../telemetry/index";
 import os from "os";
 
 let meterProvider: MeterProvider | null = null;
-let meters = new Map<string, Meter>();
+const meters = new Map<string, Meter>();
 
 interface StandardMeters {
   grpcRequestDurationMs: Histogram;

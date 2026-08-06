@@ -1,5 +1,4 @@
 import {
-  type SLOTarget,
   type SLOStatus,
   type SLOSnapshot,
   type SLOErrorBudget,

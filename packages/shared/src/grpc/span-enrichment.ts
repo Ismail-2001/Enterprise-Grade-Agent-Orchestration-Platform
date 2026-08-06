@@ -1,4 +1,4 @@
-import { context, trace, SpanStatusCode, type Span, type SpanKind } from "@opentelemetry/api";
+import { context, SpanStatusCode, type SpanKind } from "@opentelemetry/api";
 import {
   type Interceptor,
   type InterceptingCall,
@@ -19,7 +19,7 @@ export interface SpanEnrichmentConfig {
   serviceName: string;
 }
 
-export function spanEnrichmentInterceptor(config: SpanEnrichmentConfig): Interceptor {
+export function spanEnrichmentInterceptor(_config: SpanEnrichmentConfig): Interceptor {
   const tracer = getTracer();
 
   return (options: InterceptorOptions, nextCall: NextCall): InterceptingCall => {
