@@ -9,7 +9,7 @@ import {
   type StatusObject,
   status as GrpcStatus,
 } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCall } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCallInterface } from "@grpc/grpc-js";
 import { ServerInterceptingCall as ServerInterceptingCallImpl } from "@grpc/grpc-js";
 import { verifyJWT } from "../crypto";
 
@@ -219,7 +219,7 @@ export function createNamespaceServerInterceptor(
 
   return (
     methodDescriptor: ServerMethodDefinition<unknown, unknown>,
-    call: ServerInterceptingCall
+    call: ServerInterceptingCallInterface
   ): ServerInterceptingCallImpl => {
     const methodPath = methodDescriptor.path ?? "unknown";
 
@@ -301,10 +301,10 @@ export function createNamespaceServerInterceptor(
       sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => callback(status),
       startRead: () => call.startRead(),
       getPeer: () => call.getPeer(),
-      getDeadline: () => call.getDeadline(),
+      getDeadline: () => call.getDeadline() as unknown as Date,
       getHost: () => call.getHost(),
-      getAuthContext: () => call.getAuthContext(),
-      getConnectionInfo: () => call.getConnectionInfo(),
+      getAuthContext: () => call.getAuthContext() as unknown as Record<string, string[]>,
+      getConnectionInfo: () => call.getConnectionInfo() as unknown as Record<string, unknown>,
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 

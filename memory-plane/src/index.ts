@@ -116,7 +116,7 @@ const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
-function sanitizeKeyComponent(value: string): string {
+function sanitizeKeyComponent(value: unknown): string {
   if (typeof value !== "string") return "unknown";
   const sanitized = value.replace(/[^a-zA-Z0-9_.-]/g, "_");
   return sanitized.substring(0, 128) || "unknown";
@@ -145,7 +145,7 @@ server.addService(memoryService.service, {
       // Slow path: fall back to PostgreSQL if not in Redis
       if (!data) {
         try {
-          const entry = await memRepo.get(namespace, agent_id, key);
+          const entry = await memRepo.get(namespace as string, agent_id as string, key as string);
           if (entry) {
             data = entry.value;
             // Backfill Redis for faster subsequent reads
@@ -177,7 +177,7 @@ server.addService(memoryService.service, {
 
       const redisKey = `egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`;
       const serialized = JSON.stringify(data);
-      const ttl = ttl_seconds || (memory_type === "working" ? 300 : 86400);
+      const ttl = (ttl_seconds as number) || (memory_type === "working" ? 300 : 86400);
 
       // Fast path: write to Redis
       await redis.setex(redisKey, ttl, serialized);
@@ -195,9 +195,9 @@ server.addService(memoryService.service, {
         createAuditEntry(
           "agent.tool_call",
           "info",
-          { type: "agent", id: agent_id, namespace },
+          { type: "agent", id: agent_id as string, namespace: namespace as string },
           { name: "memory.Write", result: "allowed" },
-          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace },
+          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace: namespace as string },
         );
       } catch { /* audit failure is non-fatal */ }
 
@@ -220,16 +220,16 @@ server.addService(memoryService.service, {
       await redis.del(redisKey);
 
       // Also soft-delete from PostgreSQL
-      memRepo.delete(namespace, agent_id, key)
+      memRepo.delete(namespace as string, agent_id as string, key as string)
         .catch((pgErr) => logger.warn({ err: pgErr.message }, "PostgreSQL delete failed"));
 
       try {
         createAuditEntry(
           "agent.tool_call",
           "info",
-          { type: "agent", id: agent_id, namespace },
+          { type: "agent", id: agent_id as string, namespace: namespace as string },
           { name: "memory.Delete", result: "allowed" },
-          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace },
+          { type: "memory", id: `${namespace}/${memory_type}/${key}`, namespace: namespace as string },
         );
       } catch { /* audit failure is non-fatal */ }
 
@@ -261,7 +261,7 @@ server.addService(memoryService.service, {
       // Fall back to PostgreSQL if Redis returned nothing
       if (entries.length === 0) {
         try {
-          const pgEntries = await memRepo.list(namespace, agent_id);
+          const pgEntries = await memRepo.list(namespace as string, agent_id as string);
           for (const entry of pgEntries) {
             entries.push({ key: entry.key, data: entry.value });
           }

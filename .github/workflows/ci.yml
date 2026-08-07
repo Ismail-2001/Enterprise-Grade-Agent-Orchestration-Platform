@@ -483,6 +483,15 @@ jobs:
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ steps.registry.outputs.repo }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+        if: github.event_name == 'push'
 
   docker-compose-validate:
     name: Docker Compose Validate

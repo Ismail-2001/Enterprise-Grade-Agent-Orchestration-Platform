@@ -80,8 +80,8 @@ describe("Observability Plane", () => {
         const spans = traceStore.get("exec-1");
         expect(spans).toBeDefined();
         expect(spans!.length).toBe(1);
-        expect(spans![0].span_id).toBe("span-001");
-        expect(spans![0].name).toBe("llm_call");
+        expect(spans![0]?.span_id).toBe("span-001");
+        expect(spans![0]?.name).toBe("llm_call");
         done();
       });
     });
@@ -125,7 +125,7 @@ describe("Observability Plane", () => {
       }, (err: any, _response: any) => {
         expect(err).toBeNull();
         const spans = traceStore.get("exec-3");
-        expect(spans![0].attributes.fields["egaop.llm.cost"].stringValue).toBe("$0.024");
+        expect(spans![0]?.attributes?.fields?.["egaop.llm.cost"]?.stringValue).toBe("$0.024");
         done();
       });
     });

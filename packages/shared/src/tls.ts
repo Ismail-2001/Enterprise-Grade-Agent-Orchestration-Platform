@@ -154,7 +154,7 @@ export function getClientCredentials(): grpc.ChannelCredentials {
 }
 
 export function watchCertificateRotation(certDir: string, onReload: () => void): fs.FSWatcher {
-  return fs.watch(certDir, (eventType, filename) => {
+  return fs.watch(certDir, (_eventType, filename) => {
     if (filename === "tls.crt" || filename === "tls.key" || filename === "ca.crt") {
       logger.info({ filename }, "Certificate change detected");
       onReload();

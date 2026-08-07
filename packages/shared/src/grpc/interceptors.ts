@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { Interceptor, InterceptingCall, InterceptorOptions, NextCall, Metadata, Requester, InterceptingListener, StatusObject, status as GrpcStatus } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCall } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCallInterface } from "@grpc/grpc-js";
 import { ServerInterceptingCall as ServerInterceptingCallImpl } from "@grpc/grpc-js";
 import { spanEnrichmentInterceptor } from "./span-enrichment.js";
 
@@ -101,7 +101,7 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
 
   return (
     methodDescriptor: ServerMethodDefinition<unknown, unknown>,
-    call: ServerInterceptingCall
+    call: ServerInterceptingCallInterface
   ): ServerInterceptingCallImpl => {
     const methodPath = methodDescriptor.path ?? "unknown";
 
@@ -170,10 +170,10 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
       sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => callback(status),
       startRead: () => call.startRead(),
       getPeer: () => call.getPeer(),
-      getDeadline: () => call.getDeadline(),
+      getDeadline: () => call.getDeadline() as unknown as Date,
       getHost: () => call.getHost(),
-      getAuthContext: () => call.getAuthContext(),
-      getConnectionInfo: () => call.getConnectionInfo(),
+      getAuthContext: () => call.getAuthContext() as unknown as Record<string, string[]>,
+      getConnectionInfo: () => call.getConnectionInfo() as unknown as Record<string, unknown>,
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 

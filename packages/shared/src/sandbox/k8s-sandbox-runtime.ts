@@ -75,6 +75,11 @@ export class K8sSandboxRuntime {
     this.k8sApi = this.kc.makeApiClient(k8s.CoreV1Api as unknown);
   }
 
+  getApi(): K8sApi {
+    if (!this.k8sApi) throw new Error("K8sSandboxRuntime not initialized — call ensureInit() first");
+    return this.k8sApi;
+  }
+
   async createSandbox(spec: SandboxSpec): Promise<Sandbox> {
     await this.ensureInit();
     const initOutputs: string[] = [];
@@ -180,7 +185,7 @@ export class K8sSandboxRuntime {
 
   private async execInPod(podName: string, command: string[]): Promise<string> {
     const k8s = await getK8s();
-    const exec = new k8s.Exec(this.kc as unknown as k8s.KubeConfig);
+    const exec = new k8s.Exec(this.kc as unknown as InstanceType<typeof k8s.KubeConfig>);
     return new Promise((resolve, reject) => {
       let output = "";
       const stdout = new Writable({

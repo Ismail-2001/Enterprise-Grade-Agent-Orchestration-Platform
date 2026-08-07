@@ -112,7 +112,7 @@ const fastify = Fastify({
 });
 
 // Security headers on every response
-fastify.addHook("onSend", async (request, reply, payload) => {
+fastify.addHook("onSend", async (_request, reply, payload) => {
   reply.header("X-Content-Type-Options", "nosniff");
   reply.header("X-Frame-Options", "DENY");
   reply.header("X-XSS-Protection", "1; mode=block");
@@ -505,7 +505,7 @@ fastify.get("/api/agents/:id/executions", async (request) => {
         durationMs,
         costUsd: 0, // Cost tracked in observability plane
         traceId: workflow.workflowId,
-        runId: (workflow as Record<string, unknown>).runtimeStatus ?? undefined,
+        runId: (workflow as unknown as Record<string, unknown>).runtimeStatus ?? undefined,
       });
     }
 
@@ -970,7 +970,7 @@ fastify.get("/api/traces/:traceId", async (request, reply) => {
           endTime: found.closeTime?.toISOString() ?? found.startTime.toISOString(),
           durationMs,
           status: found.status.name === "COMPLETED" ? "ok" : found.status.name === "FAILED" ? "error" : "running",
-          attributes: { workflowId: found.workflowId, taskQueue: found.taskQueue },
+          attributes: { workflowId: found.workflowId, taskQueue: (found as unknown as Record<string, unknown>).taskQueue },
         },
       ],
     });
@@ -1007,7 +1007,7 @@ fastify.get("/api/metrics", async () => {
           totalLatencyMs += info.closeTime.getTime() - info.startTime.getTime();
         }
         // Extract cost from workflow memo if available
-        const raw = (info as Record<string, unknown>).raw as Record<string, unknown> | undefined;
+        const raw = (info as unknown as Record<string, unknown>).raw as Record<string, unknown> | undefined;
         const memo = raw?.memo as Record<string, unknown> | undefined;
         if (memo?.totalCost) {
           const costStr = String(memo.totalCost).replace("$", "");
@@ -1170,7 +1170,7 @@ fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async
 
         // If execution is terminal, send final event and clean up
         if (["COMPLETED", "FAILED", "CANCELLED", "TERMINATED", "TIMED_OUT"].includes(info.status.name)) {
-          const closeTime = (info as Record<string, unknown>).closeTime as Date | undefined;
+          const closeTime = (info as unknown as Record<string, unknown>).closeTime as Date | undefined;
           broadcastToExecution(executionId, "execution_finished", {
             executionId,
             status: statusMap[info.status.name],

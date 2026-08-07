@@ -92,23 +92,23 @@ server.addService(obsService.service, {
     logger.info({ execution_id, span_id, name }, "Ingesting observability span...");
 
     // Hot path: keep in memory for fast replay
-    const existing = traceStore.get(execution_id) || [];
-    existing.push({ span_id, name, start_time, end_time, attributes });
-    traceStore.set(execution_id, existing);
+    const existing = traceStore.get(execution_id as string) || [];
+    existing.push({ span_id: span_id as string, name: name as string, start_time: start_time as StoredSpan['start_time'], end_time: end_time as StoredSpan['end_time'], attributes: attributes as StoredSpan['attributes'] });
+    traceStore.set(execution_id as string, existing);
 
     // Durable path: persist to PostgreSQL
     try {
       const span = {
-        traceId: execution_id,
-        spanId: span_id || `span-${Date.now()}`,
+        traceId: execution_id as string,
+        spanId: (span_id as string) || `span-${Date.now()}`,
         parentSpanId: null,
         serviceName: "egaop",
-        operationName: name || "unknown",
-        namespace: attributes?.fields?.['egaop.namespace']?.stringValue || "default",
-        startTime: start_time?.seconds ? new Date(start_time.seconds * 1000) : new Date(),
-        endTime: end_time?.seconds ? new Date(end_time.seconds * 1000) : null,
-        status: attributes?.fields?.['egaop.status']?.stringValue || "ok",
-        attributes: attributes || {},
+        operationName: (name as string) || "unknown",
+        namespace: (attributes as StoredSpan['attributes'])?.fields?.['egaop.namespace']?.stringValue || "default",
+        startTime: (start_time as StoredSpan['start_time'])?.seconds ? new Date((start_time as { seconds: number }).seconds * 1000) : new Date(),
+        endTime: (end_time as StoredSpan['end_time'])?.seconds ? new Date((end_time as { seconds: number }).seconds * 1000) : null,
+        status: (attributes as StoredSpan['attributes'])?.fields?.['egaop.status']?.stringValue || "ok",
+        attributes: (attributes as StoredSpan['attributes']) || {},
         events: [],
       };
       await obsRepo.ingestSpan(span);
@@ -116,7 +116,7 @@ server.addService(obsService.service, {
       logger.warn({ err: pgErr instanceof Error ? pgErr.message : String(pgErr), execution_id }, "PostgreSQL span ingestion failed");
     }
 
-    const cost = attributes?.fields?.['egaop.llm.cost']?.stringValue || "$0.00";
+    const cost = (attributes as StoredSpan['attributes'])?.fields?.['egaop.llm.cost']?.stringValue || "$0.00";
     if (cost !== "$0.00") {
        logger.info({ execution_id, cost }, "Accumulating execution cost...");
     }
@@ -133,7 +133,7 @@ server.addService(obsService.service, {
     let spans: StoredSpan[] = [];
 
     try {
-      const pgSpans = await obsRepo.getTrace(execution_id, "default");
+      const pgSpans = await obsRepo.getTrace(execution_id as string, "default");
       if (pgSpans.length > 0) {
         spans = pgSpans.map((s) => ({
           span_id: s.spanId,
@@ -149,7 +149,7 @@ server.addService(obsService.service, {
 
     // Fall back to in-memory store
     if (spans.length === 0) {
-      spans = traceStore.get(execution_id) || [];
+      spans = traceStore.get(execution_id as string) || [];
     }
 
     if (spans.length === 0) {

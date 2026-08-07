@@ -5,6 +5,15 @@ const config = {
   testMatch: ["**/__tests__/**/*.test.ts"],
   clearMocks: true,
   setupFiles: ["<rootDir>/src/__tests__/env-setup.ts"],
+  coverageDirectory: "coverage",
+  coverageThreshold: {
+    global: {
+      statements: 80,
+      branches: 75,
+      functions: 80,
+      lines: 80,
+    },
+  },
 };
 
 module.exports = config;

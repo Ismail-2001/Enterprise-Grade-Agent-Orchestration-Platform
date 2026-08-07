@@ -5,6 +5,7 @@ import {
   type ServerMethodDefinition,
   type Metadata,
   type StatusObject,
+  type ServerInterceptingCallInterface,
   ServerInterceptingCall,
 } from "@grpc/grpc-js";
 import { getTracer } from "../telemetry/index.js";
@@ -31,7 +32,7 @@ export function createTraceServerInterceptor(): ServerInterceptor {
 
   return (
     methodDescriptor: ServerMethodDefinition<unknown, unknown>,
-    call: ServerInterceptingCall
+    call: ServerInterceptingCallInterface
   ): ServerInterceptingCall => {
     const methodPath = methodDescriptor.path ?? "unknown";
     const parts = methodPath.split("/").filter(Boolean);
@@ -149,10 +150,10 @@ export function createTraceServerInterceptor(): ServerInterceptor {
       },
       startRead: () => call.startRead(),
       getPeer: () => call.getPeer(),
-      getDeadline: () => call.getDeadline(),
+      getDeadline: () => call.getDeadline() as unknown as Date,
       getHost: () => call.getHost(),
-      getAuthContext: () => call.getAuthContext(),
-      getConnectionInfo: () => call.getConnectionInfo(),
+      getAuthContext: () => call.getAuthContext() as unknown as Record<string, string[]>,
+      getConnectionInfo: () => call.getConnectionInfo() as unknown as Record<string, unknown>,
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 

@@ -131,15 +131,13 @@ function getServiceClient<T>(targetService: string, port: number, serviceName: s
     ? createMTLSClientCredentials(certDir)
     : grpc.credentials.createInsecure();
 
-  return new (grpc as unknown as { makeGenericClientConstructor: new (
-    serviceDefinition: Record<string, unknown>,
-    serviceName: string,
-    options: { channelCredentials: grpc.ChannelCredentials }
-  ) => new (address: string) => T }).makeGenericClientConstructor(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic gRPC client construction
+  const ClientConstructor = (grpc as any).makeGenericClientConstructor(
     {},
     `${targetService}.${serviceName}`,
     { channelCredentials: credentials }
-  )(`dns:///${targetService}:${port}`);
+  );
+  return new ClientConstructor(`dns:///${targetService}:${port}`) as T;
 }
 
 export { getServiceClient };

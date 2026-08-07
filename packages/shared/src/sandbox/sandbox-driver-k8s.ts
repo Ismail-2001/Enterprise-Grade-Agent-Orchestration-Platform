@@ -14,7 +14,7 @@ export class K8sSandboxDriver implements SandboxDriver {
 
   async createSandbox(spec: SandboxSpec): Promise<SandboxResult> {
     await this.ensure();
-    const sandbox = await this.runtime.createSandbox(spec);
+    const sandbox = await this.runtime!.createSandbox(spec);
     return {
       sandboxId: sandbox.podName,
       status: sandbox.status,
@@ -26,7 +26,7 @@ export class K8sSandboxDriver implements SandboxDriver {
   async terminateSandbox(sandboxId: string): Promise<boolean> {
     await this.ensure();
     try {
-      await this.runtime.terminateSandbox(sandboxId);
+      await this.runtime!.terminateSandbox(sandboxId);
       return true;
     } catch {
       return false;
@@ -36,7 +36,7 @@ export class K8sSandboxDriver implements SandboxDriver {
   async getSandboxStatus(sandboxId: string): Promise<{ status: string; cpu: number; memory: number; startedAt: Date | null }> {
     await this.ensure();
     try {
-      const read = await this.runtime.k8sApi.readNamespacedPod({
+      const read = await this.runtime!.getApi().readNamespacedPod({
         namespace: process.env.K8S_NAMESPACE || "egaop",
         name: sandboxId,
       });
@@ -50,7 +50,7 @@ export class K8sSandboxDriver implements SandboxDriver {
   async health(): Promise<boolean> {
     await this.ensure();
     try {
-      await this.runtime.k8sApi.listNamespacedPod({ namespace: process.env.K8S_NAMESPACE || "egaop", limit: 1 });
+      await this.runtime!.getApi().listNamespacedPod({ namespace: process.env.K8S_NAMESPACE || "egaop", limit: 1 });
       return true;
     } catch {
       return false;
