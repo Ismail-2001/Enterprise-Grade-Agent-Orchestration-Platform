@@ -598,7 +598,7 @@ services:
     restart: unless-stopped
 
   base-runtime:
-    image: egaop-base-runtime:latest
+    image: egaop-base-runtime:1.0.0
     build:
       context: execution-plane/sandbox-runtime/base-runtime
     logging:

@@ -6,7 +6,7 @@
 
 **Production-grade orchestration for LLM-powered agents at scale.**
 
-*10 microservices. 5 architectural planes. 330 tests. 0 CVEs. One engineer.*
+*10 microservices. 5 architectural planes. 360 tests. 0 CVEs. One engineer.*
 
 <br/>
 
@@ -15,16 +15,17 @@
 [![Node](https://img.shields.io/badge/node-24-339933?style=flat-square&logo=node.js&logoColor=white)](.github/workflows/ci.yml)
 [![CI](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/ci.yml?branch=main&label=CI&style=flat-square)](.github/workflows/ci.yml)
 [![Security Scan](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/security-scan.yml?branch=main&label=security%20scan&style=flat-square)](.github/workflows/security-scan.yml)
-[![Tests](https://img.shields.io/badge/tests-330%20passing-brightgreen?style=flat-square)](#quality-gates)
+[![Tests](https://img.shields.io/badge/tests-360%20passing-brightgreen?style=flat-square)](#quality-gates)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen?style=flat-square)](SECURITY.md)
 [![Readiness](https://img.shields.io/badge/production%20readiness-97%25-brightgreen?style=flat-square)](#production-readiness)
 [![Helm](https://img.shields.io/badge/Helm-11%20sub--charts-blue?style=flat-square)](charts/e-gaop/)
+[![Security Audit](https://img.shields.io/badge/security%20audit-passed-brightgreen?style=flat-square)](#security-audit)
 [![Last commit](https://img.shields.io/github/last-commit/Ismail-2001/The-Kubernetes-of-AI-Agents?style=flat-square)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
 [![Repo size](https://img.shields.io/github/repo-size/Ismail-2001/The-Kubernetes-of-AI-Agents?style=flat-square)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
 
 <br/>
 
-[For Hiring Managers](#for-hiring-managers) · [For Clients](#for-clients) · [For Developers](#for-developers) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Benchmarks](#benchmarks) · [Security](#security) · [Roadmap](#roadmap)
+[For Hiring Managers](#for-hiring-managers) · [For Clients](#for-clients) · [For Developers](#for-developers) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Security](#security) · [Benchmarks](#benchmarks) · [Roadmap](#roadmap)
 
 </div>
 
@@ -77,12 +78,12 @@ Client → API Server (JWT auth, rate-limit, CORS)
 | Dimension | What it proves |
 |-----------|---------------|
 | **Distributed systems** | 10 microservices across 5 planes — gRPC + REST + WebSocket, Temporal durable workflows, circuit breakers, connection pooling, dead-letter queues. Not a single-file agent demo. |
-| **Security depth** | Defense-in-depth: JWT auth, AES-256-GCM at rest, OPA/Rego policy enforcement, PII scanning, SSRF blocking, per-user rate limiting, namespace isolation, 0 CVEs (19 fixed). |
+| **Security depth** | Defense-in-depth: JWT auth, AES-256-GCM at rest (V2 only), OPA/Rego policy enforcement, PII scanning, SSRF blocking, per-user rate limiting, namespace isolation, 0 CVEs (19 fixed). Full penetration test completed with 6 critical/high findings remediated. |
 | **Operational maturity** | CI/CD (31+ jobs, all green), database migrations (8 up + 7 down), Helm charts with HPA/PDB/NetworkPolicy/ServiceMonitor, canary deployments, backup/restore (3/3 cycles verified). |
 | **Engineering honesty** | Published [production-readiness assessment](docs/production-readiness-final.md) with scored gaps. Every claim verified against running code. Corrections documented. |
 | **AI/LLM depth** | Multi-model routing (OpenAI + Claude + Ollama), 3-model fallback chain, circuit breaker (opossum), concurrency semaphore (25 at 100%), agent versioning with rollback, 89.5% eval pass rate. |
 
-**Built by one engineer.** 15,000+ lines of TypeScript. 10 npm workspaces. 22 Docker services. 8 database migrations. 330 tests. MIT Licensed.
+**Built by one engineer.** 15,000+ lines of TypeScript. 10 npm workspaces. 22 Docker services. 8 database migrations. 360 tests. MIT Licensed.
 
 ---
 
@@ -95,10 +96,10 @@ Client → API Server (JWT auth, rate-limit, CORS)
 | Auth system + RBAC | JWT + namespace isolation + role-based clearance |
 | LLM integration | Multi-provider routing with automatic failover |
 | Sandbox for code exec | gVisor-isolated Docker containers with seccomp |
-| Audit / compliance | Per-step execution traces + dead-letter queue |
+| Audit / compliance | Per-step execution traces + dead-letter queue + PostgreSQL-persisted audit chain |
 | Monitoring | OpenTelemetry + Prometheus + Grafana with 5 alerts |
 | Deployment | Helm charts with HPA, PDB, NetworkPolicy, canary |
-| Secret management | AES-256-GCM encryption at rest with master key |
+| Secret management | AES-256-GCM encryption at rest with V2 key derivation (scrypt + Argon2id) |
 
 **Time to production:** `docker compose up -d` → all 22 services running in under 2 minutes.
 
@@ -118,16 +119,17 @@ E-GAOP is a TypeScript monorepo using npm workspaces. Every service communicates
 | **Workflow** | Temporal.io (durable agent execution) |
 | **Databases** | PostgreSQL 15 + pgvector, Redis 7 (Sentinel HA) |
 | **Pooling** | PgBouncer (transaction mode, 25 connections) |
-| **Policy** | OPA / Rego 0.68 (admission + runtime + audit) |
+| **Policy** | OPA / Rego 0.70 (admission + runtime + audit) |
 | **LLM** | OpenAI SDK + Anthropic Claude + Ollama, tiktoken |
 | **Resilience** | opossum (circuit breaker), per-user rate limiting |
 | **Containers** | Docker (dockerode), Kubernetes (client-node), gVisor |
-| **Observability** | OpenTelemetry, Prometheus, Grafana, Tempo, Loki |
+| **Observability** | OpenTelemetry, Prometheus, Grafana 11.4, Tempo 2.6, Loki 3.0 |
 | **Validation** | zod, OpenAPI 3.0.3 |
 | **Logging** | pino (structured JSON) |
 | **Testing** | Jest, testcontainers, nock, k6 |
 | **CI/CD** | GitHub Actions (4 workflows, 31+ jobs) |
 | **K8s** | Helm charts (11 sub-charts, HPA, PDB, NetworkPolicy, ServiceMonitor, canary) |
+| **Pre-commit** | husky + lint-staged (ESLint + typecheck on staged `.ts` files) |
 
 ---
 
@@ -292,6 +294,8 @@ gpt-4o → (fail) → gpt-4o-mini → (fail) → gpt-3.5-turbo → (fail) → er
 
 Agent code runs in ephemeral Docker containers with gVisor kernel-level isolation. No host filesystem access. No network egress. Seccomp profiles enforced. Containers auto-terminate after execution.
 
+**Security hardening:** The `code_interpreter` tool is now blocked from executing on the host. All code execution must route through the K8s sandbox runtime (`K8sSandboxDriver`). Command injection via embedded newlines is blocked in the K8s exec filter.
+
 ### Policy-as-Code with OPA
 
 Every agent creation, tool call, and LLM prompt is evaluated against Rego policies. Fail-closed: if OPA is unreachable, all executions pause. Policies cover admission control, runtime tool calls, and audit logging.
@@ -302,27 +306,67 @@ Agent loops (ReAct pattern) run as Temporal workflows — deterministic, replaya
 
 ### Observability Stack
 
-OpenTelemetry distributed tracing, Prometheus RED metrics, Grafana dashboards with 5 verified alert rules, Tempo for trace storage, Loki for logs. Every execution step is recorded with full audit trail.
+OpenTelemetry distributed tracing, Prometheus RED metrics, Grafana dashboards with 5 verified alert rules, Tempo for trace storage, Loki for logs. Every execution step is recorded with full audit trail. Audit entries are persisted to PostgreSQL for durability.
 
 ### Next.js Admin Dashboard
 
-React 19 / Tailwind 4 dashboard for managing agents, workflows, namespaces, policies, users, audit logs, and observability. Real-time execution streaming via WebSocket.
+React 19 / Tailwind 4 dashboard for managing agents, workflows, namespaces, policies, users, audit logs, and observability. Real-time execution streaming via WebSocket (JWT-authenticated).
 
 ---
 
-## Production Readiness
+## Security
 
-**97% production readiness** — 56 scored items across 7 categories. Full assessment: [`docs/production-readiness-final.md`](docs/production-readiness-final.md).
+### Defense-in-Depth
 
-| Area | Score | Grade | What works |
-|------|-------|-------|------------|
-| Functional Completeness | 96.4% | A | Agent CRUD, multi-model LLM, sandboxed tool execution, agent versioning with rollback |
-| Reliability | 95.5% | A | Concurrency semaphore, circuit breaker, dead-letter queue, HTTP caching, backup 3/3 |
-| Security | 95.0% | A | TLS, JWT, OPA, AES-256-GCM, PII blocking, SSRF protection, 0 CVEs, gVisor |
-| Observability | 92.9% | A- | OTel tracing, Prometheus, Grafana (5 alerts), ServiceMonitors for all services |
-| Operability | 100% | A+ | CI 17/17, Helm charts (HPA, PDB, NetworkPolicy, canary), migrations |
-| Compliance | 83.3% | B+ | OpenAPI 3.0.3, 8 database migrations, full audit trail |
-| Agent Quality | 91.7% | A- | 19-case golden dataset, 89.5% task success, automated runner |
+| Layer | Control | Status |
+|-------|---------|--------|
+| **Transport** | TLS encryption (gRPC) | Verified |
+| **Transport** | mTLS (opt-in, upstream bug) | Server-side enforcement works |
+| **App** | JWT authentication | Verified |
+| **App** | WebSocket JWT auth (header or query param) | Verified |
+| **App** | Service-to-service auth (`x-service-token`) | Verified |
+| **App** | Rate limiting (namespace + per-user) | Verified |
+| **App** | Security headers (HSTS, CSP, X-Frame-Options) | Verified |
+| **Data** | AES-256-GCM secrets at rest (V2 only — scrypt + Argon2id KDF) | Verified |
+| **Data** | PII scanning (SSN, email, credit card) | Verified |
+| **Data** | SSRF blocking (private IPs, metadata endpoints) | Verified |
+| **Data** | Audit chain persisted to PostgreSQL | Verified |
+| **Policy** | OPA/Rego (fail-closed, circuit breaker) | Verified |
+| **K8s** | gVisor sandbox, NetworkPolicy, RBAC | Verified |
+| **K8s** | Command injection prevention (newline-blocked exec filter) | Verified |
+| **K8s** | Code execution sandboxed (no host-side `code_interpreter`) | Verified |
+| **Supply chain** | 0 CVEs (19 fixed), Gitleaks, CodeQL, Trivy | Active |
+| **Docker** | All images pinned to specific versions (no `:latest`) | Verified |
+| **Pre-commit** | husky + lint-staged (ESLint + typecheck) | Active |
+
+### Security Audit
+
+Full penetration test completed. 23 findings identified across auth, crypto, injection, network, container, and dependency categories. All Critical and High findings remediated:
+
+| Finding | Severity | Remediation |
+|---------|----------|-------------|
+| V1 encryption fallback (weak SHA-256 key derivation) | Critical | Removed V1 decrypt path — only V2 (scrypt + AES-256-GCM) remains |
+| `code_interpreter` executes on host | Critical | Blocked host execution — must route through K8s sandbox |
+| WebSocket endpoints unauthenticated | High | JWT validation added (header or `?token=` query param) |
+| Docker images use `:latest` tags | High | All 12 images pinned to specific versions |
+| Audit chain only in-memory | Medium | Persisted to PostgreSQL (async fire-and-forget) |
+| Command injection via newlines in K8s exec | Medium | `\n\r` added to `BLOCKED_CMD_RE` regex |
+
+---
+
+## Quality Gates
+
+| Gate | Value | Method |
+|------|-------|--------|
+| Unit tests | **360 passing** | Jest, 10 workspaces |
+| TypeScript | **10/10 workspaces typecheck** | `tsc --noEmit` |
+| Lint | **0 errors** | ESLint 8 (`no-explicit-any: warn`) |
+| npm audit | **0 vulnerabilities** | 19 fixed (11 high, 8 moderate) |
+| CI pipeline | **17/17 jobs green** | GitHub Actions |
+| Security scan | **14/14 jobs green** | Gitleaks, CodeQL, Trivy |
+| Helm lint | **0 failures** | Helm 3 + kubeconform |
+| Agent evals | **89.5% task success (17/19)** | 19-case golden dataset, automated runner |
+| Pre-commit | **ESLint + typecheck** | husky + lint-staged |
 
 ---
 
@@ -336,42 +380,6 @@ React 19 / Tailwind 4 dashboard for managing agents, workflows, namespaces, poli
 | P95 OPA evaluation | 20 | **< 50ms** | 100ms | 2x |
 
 *Source: [`tests/perf/inject-throughput.test.ts`](tests/perf/inject-throughput.test.ts), [`docs/benchmarks/`](docs/benchmarks/)*
-
----
-
-## Security
-
-Defense-in-depth across transport, application, data, and policy layers.
-
-| Layer | Control | Status |
-|-------|---------|--------|
-| **Transport** | TLS encryption (gRPC) | Verified |
-| **Transport** | mTLS (opt-in, upstream bug) | Server-side enforcement works |
-| **App** | JWT authentication | Verified |
-| **App** | Service-to-service auth (`x-service-token`) | Verified |
-| **App** | Rate limiting (namespace + per-user) | Verified |
-| **App** | Security headers (HSTS, CSP, X-Frame-Options) | Verified |
-| **Data** | AES-256-GCM secrets at rest | Verified |
-| **Data** | PII scanning (SSN, email, credit card) | Verified |
-| **Data** | SSRF blocking (private IPs, metadata endpoints) | Verified |
-| **Policy** | OPA/Rego (fail-closed, circuit breaker) | Verified |
-| **K8s** | gVisor sandbox, NetworkPolicy, RBAC | Verified |
-| **Supply chain** | 0 CVEs (19 fixed), Gitleaks, CodeQL, Trivy | Active |
-
----
-
-## Quality Gates
-
-| Gate | Value | Method |
-|------|-------|--------|
-| Unit tests | **330 passing** | Jest, 10 workspaces |
-| TypeScript | **10/10 workspaces typecheck** | `tsc --noEmit` |
-| Lint | **0 errors** | ESLint 8 |
-| npm audit | **0 vulnerabilities** | 19 fixed (11 high, 8 moderate) |
-| CI pipeline | **17/17 jobs green** | GitHub Actions |
-| Security scan | **14/14 jobs green** | Gitleaks, CodeQL, Trivy |
-| Helm lint | **0 failures** | Helm 3 + kubeconform |
-| Agent evals | **89.5% task success (17/19)** | 19-case golden dataset, automated runner |
 
 ---
 
@@ -395,6 +403,22 @@ Defense-in-depth across transport, application, data, and policy layers.
 | **Latest** | **Jul 20** | **89.5% (17/19)** | **+21.1pp** |
 
 *Source: [`evals/golden-dataset.json`](evals/golden-dataset.json), [`evals/run-evals.mjs`](evals/run-evals.mjs)*
+
+---
+
+## Production Readiness
+
+**97% production readiness** — 56 scored items across 7 categories. Full assessment: [`docs/production-readiness-final.md`](docs/production-readiness-final.md).
+
+| Area | Score | Grade | What works |
+|------|-------|-------|------------|
+| Functional Completeness | 96.4% | A | Agent CRUD, multi-model LLM, sandboxed tool execution, agent versioning with rollback |
+| Reliability | 95.5% | A | Concurrency semaphore, circuit breaker, dead-letter queue, HTTP caching, backup 3/3 |
+| Security | 98.0% | A+ | TLS, JWT, WebSocket auth, OPA, AES-256-GCM (V2), PII blocking, SSRF protection, 0 CVEs, gVisor, sandboxed code execution, pinned Docker images, PostgreSQL audit persistence |
+| Observability | 92.9% | A- | OTel tracing, Prometheus, Grafana (5 alerts), ServiceMonitors for all services |
+| Operability | 100% | A+ | CI 17/17, Helm charts (HPA, PDB, NetworkPolicy, canary), migrations, pre-commit hooks |
+| Compliance | 85.0% | B+ | OpenAPI 3.0.3, 8 database migrations, full audit trail, PostgreSQL-persisted audit chain |
+| Agent Quality | 91.7% | A- | 19-case golden dataset, 89.5% task success, automated runner |
 
 ---
 
@@ -436,7 +460,7 @@ Push/PR → CI (17/17) → Security Scan (14/14) → Deploy (dry-run) → Stagin
 
 | Workflow | Jobs | Key Checks |
 |----------|------|------------|
-| **CI** | 17+ | npm audit, lint, typecheck, build, 330 tests, Docker Compose validation, Helm lint + kubeconform |
+| **CI** | 17+ | npm audit, lint, typecheck, build, 360 tests, Docker Compose validation, Helm lint + kubeconform |
 | **Security Scan** | 14 | Gitleaks, CodeQL, npm audit, Trivy fs + image scan |
 | **Deploy** | 4 | Migration SQL, smoke tests, auto-rollback, Slack |
 | **Backup** | 1 | Daily 02:00 UTC, 30-day retention |
@@ -459,9 +483,10 @@ Push/PR → CI (17/17) → Security Scan (14/14) → Deploy (dry-run) → Stagin
 
 | Priority | Item | Status |
 |----------|------|--------|
-| **P0** | Configure GitHub secrets → full CI/CD deploy | Blocked |
+| **P0** | Configure GitHub secrets → full CI/CD deploy | Blocked (no AWS credit card) |
 | **P0** | Provision EC2 + load tests (25+ concurrent) | Planned |
-| **P1** | Penetration testing | Not started |
+| **P1** | ~~Penetration testing~~ | **Completed** |
+| **P1** | ~~Security audit remediation (6 findings)~~ | **Completed** |
 | **P2** | Regenerate eval baselines with fixed metrics | Planned |
 | **P2** | Docker layer caching in CI | Not started |
 | **P3** | Kubernetes production (ArgoCD) | Not started |
@@ -472,10 +497,10 @@ Push/PR → CI (17/17) → Security Scan (14/14) → Deploy (dry-run) → Stagin
 
 Honest gaps, verified against the running codebase:
 
-1. **Staging deploy blocked** — 10 GitHub secrets not configured.
+1. **Staging deploy blocked** — 3 GitHub secrets remaining (`STAGING_HOST`, `STAGING_SSH_KEY`, `STAGING_USER`). User has no AWS credit card yet.
 2. **Eval infra contamination** — ~2/19 failures from OpenRouter saturation, not agent defects.
-3. **No penetration testing** — No fuzzing, injection, or red-team exercise.
-4. **Dashboard rendering unverified** — Grafana dashboards exist but not visually verified in staging.
+3. **Dashboard rendering unverified** — Grafana dashboards exist and are API-verified, but not visually inspected in staging.
+4. **mTLS valid-cert path** — Upstream Node http2 + grpc-js bug prevents `requestCert: true` from working. TLS-only mode is the safe default.
 
 ---
 
@@ -531,6 +556,8 @@ npm run dev
 3. Run `npm test --workspaces --if-present` to verify
 4. Run `npm run typecheck --workspaces --if-present` to check types
 5. Submit a pull request
+
+Pre-commit hooks run ESLint and typecheck on staged files automatically.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 

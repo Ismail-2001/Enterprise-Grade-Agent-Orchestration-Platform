@@ -12,7 +12,7 @@ name: k8s-ai-agents-loadtest
 
 services:
   k6:
-    image: grafana/k6:latest
+    image: grafana/k6:0.54.0
     entrypoint: []
     command:
       - run
