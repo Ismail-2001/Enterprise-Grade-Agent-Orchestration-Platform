@@ -2,8 +2,10 @@
 
 ## Current Status
 
-**Vulnerability scanning has never run on this repository's container images.**
-See `docs/production-readiness-final.md` (Known Gaps section) for details.
+- **Container image scanning**: Active in CI via Trivy. Every PR that modifies a `Dockerfile` or `docker-compose.yml` triggers a Trivy scan on `docker-build`. High/critical findings block the merge.
+- **Security audit**: Completed. 6 findings identified and remediated (see `docs/production-readiness-final.md`).
+- **Crypto**: V1 (AES-256-CBC) has been fully removed. Only V2 (AES-256-GCM) remains. No migration path exists — old V1-encrypted secrets must be re-encrypted before upgrade.
+- **WebSocket auth**: All WebSocket endpoints now require a valid JWT token in the `Authorization` header during the initial handshake. Unauthenticated connections are rejected with `401`.
 
 ## Reporting a Vulnerability
 
@@ -22,16 +24,18 @@ If you discover a security issue in E-GAOP, please report it privately:
 
 - OPA policy enforcement for agent execution authorization
 - JWT authentication for API access
+- JWT authentication for WebSocket endpoints
 - Encrypted secret storage (AES-256-GCM, Postgres-backed)
 - Sandbox network isolation (egaop-sandbox internal network)
-- TLS encryption for gRPC (mTLS partially active — server requests client certs but verification blocked by @grpc/grpc-js v1.14.4 bug)
+- TLS encryption for gRPC
+- mTLS (server requests client certs — verification disabled pending upstream fix)
+- Container image scanning via Trivy in CI (docker-build workflow)
+- Security audit completed with 6 remediated findings
 
 ## What's Not Implemented
 
-- Automated vulnerability scanning (planned, not yet active)
+- mTLS client-cert verification (blocked by @grpc/grpc-js upstream bug)
 - Penetration testing (not performed)
-- mTLS (disabled due to upstream library bug)
-- Formal security audit (not conducted)
 - Automated secret scanning in CI (not configured)
 
 See `docs/production-readiness-final.md` for the full security assessment.

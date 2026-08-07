@@ -10,7 +10,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API = "http://localhost:3001";
 const AUTH = { email: "loadtest5@test.com", password: "LoadTestPass123" };
 const AGENT_ID = "eval-agent";
-const TEMPORAL_CONTAINER = "enterprise-grade-agent-orchestration-platform-main-temporal-1";
+function getTemporalContainerName() {
+  try {
+    const ids = execFileSync("docker", ["compose", "ps", "-q", "temporal"],
+      { encoding: "utf-8", timeout: 5000 }).trim();
+    if (ids) {
+      return execFileSync("docker", ["inspect", "--format", "{{.Name}}", ids.split("\n")[0]],
+        { encoding: "utf-8", timeout: 5000 }).trim().replace(/^\//, "");
+    }
+  } catch { /* fall through */ }
+  return "enterprise-grade-agent-orchestration-platform-main-temporal-1";
+}
+const TEMPORAL_CONTAINER = getTemporalContainerName();
 
 function getTemporalAddress() {
   try {
@@ -63,7 +74,12 @@ async function login() {
 }
 
 async function triggerRun(token, prompt, extra = {}) {
-  const body = { namespace: extra.namespace || "default", input: { prompt, systemPrompt: SYSTEM_PROMPT } };
+  const body = { namespace: extra.namespace || "default", input: { systemPrompt: SYSTEM_PROMPT } };
+  if (extra.messages) {
+    body.input.messages = extra.messages;
+  } else {
+    body.input.prompt = prompt;
+  }
   if (extra.resourceNamespace) body.resourceNamespace = extra.resourceNamespace;
   if (extra.callerRole) body.callerRole = extra.callerRole;
   const maxRetries = 2;
@@ -315,6 +331,7 @@ async function main() {
         namespace: caseDef.namespace,
         resourceNamespace: caseDef.resourceNamespace,
         callerRole: caseDef.callerRole,
+        messages: caseDef.messages,
       });
 
       // Poll for completion
