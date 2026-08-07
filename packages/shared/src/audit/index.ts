@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getPool } from "../db.js";
 
 export type AuditEventType =
   | "auth.login"
@@ -146,7 +147,46 @@ export function createAuditEntry(
     process.stdout.write(logEntry + "\n");
   }
 
+  // Persist to PostgreSQL (fire-and-forget)
+  if (process.env.NODE_ENV !== "test") {
+    persistToPostgres(entry).catch(() => {});
+  }
+
   return entry;
+}
+
+// ── PostgreSQL persistence ──────────────────────────────────────────────────
+// Runs in background — failures are logged but never block the caller.
+
+async function persistToPostgres(entry: AuditEntry): Promise<void> {
+  try {
+    const pool = await getPool();
+    await pool.query(
+      `INSERT INTO audit_entries (event_id, event_type, severity, actor, target, action, context, integrity, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (event_id) DO NOTHING`,
+      [
+        entry.eventId,
+        entry.eventType,
+        entry.severity,
+        JSON.stringify(entry.actor),
+        entry.target ? JSON.stringify(entry.target) : null,
+        JSON.stringify(entry.action),
+        JSON.stringify(entry.context),
+        JSON.stringify(entry.integrity),
+        entry.timestamp,
+      ],
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        message: `Failed to persist audit entry ${entry.eventId} to PostgreSQL: ${message}`,
+      }) + "\n",
+    );
+  }
 }
 
 export function getAuditChain(chainId: string): AuditEntry[] {

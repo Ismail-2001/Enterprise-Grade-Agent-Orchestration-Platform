@@ -94,7 +94,7 @@ services:
     restart: unless-stopped
 
   pgbouncer:
-    image: bitnami/pgbouncer:latest
+    image: bitnami/pgbouncer:1.23.1
     environment:
       POSTGRESQL_HOST: postgres
       POSTGRESQL_PORT: 5432
@@ -132,7 +132,7 @@ services:
     restart: unless-stopped
 
   temporal:
-    image: temporalio/auto-setup:latest
+    image: temporalio/auto-setup:1.25.2
     environment:
       DB: postgres12
       DB_PORT: 5432
@@ -159,7 +159,7 @@ services:
     restart: unless-stopped
 
   opa:
-    image: openpolicyagent/opa:latest
+    image: openpolicyagent/opa:0.70.0
     volumes:
       - ./policy-plane/policies:/policies:ro
     command:
@@ -183,7 +183,7 @@ services:
 
   # ─── Observability Infrastructure ─────────────────────────────────────────
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.115.0
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -203,7 +203,7 @@ services:
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.6.1
     ports:
       - "3200:3200"   # Tempo HTTP API
     command: ["-config.file=/etc/tempo/config.yml"]
@@ -243,7 +243,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.1.0
     ports:
       - "9091:9090"
     volumes:
@@ -264,7 +264,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.4.0
     ports:
       - "3003:3000"
     environment:
@@ -575,7 +575,7 @@ services:
   # Docker socket proxy — exposes a filtered Docker API to sandbox-runtime
   # without requiring root or direct socket access.
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:0.13.0
     environment:
       POST: "1"
       CONTAINERS: "1"

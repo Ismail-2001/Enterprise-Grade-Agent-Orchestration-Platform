@@ -51,8 +51,9 @@ function runTool(args: string[], opts?: Partial<SpawnOptions>): Promise<ExecResu
 
 const TOOL_EXECUTORS: Record<string, (args: Record<string, unknown>) => Promise<ExecResult>> = {
   code_interpreter: async (args) => {
-    const { code } = CODE_SCHEMA.parse(args);
-    return runTool(["python3", "-c", code]);
+    // code_interpreter must NOT execute on the host — route through K8s sandbox
+    void CODE_SCHEMA.parse(args); // validate input but reject execution
+    return { stdout: "", stderr: "code_interpreter is not allowed on the host. Use the K8s sandbox runtime (K8sSandboxDriver) for code execution.", exitCode: 1 };
   },
   file_read: async (args) => {
     const { path } = PATH_SCHEMA.parse(args);

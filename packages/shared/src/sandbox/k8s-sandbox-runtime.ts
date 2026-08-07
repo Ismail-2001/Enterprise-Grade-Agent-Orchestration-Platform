@@ -8,7 +8,7 @@ export interface Sandbox {
   initOutputs: string[];
 }
 
-const BLOCKED_CMD_RE = /[;&|`$(){}!<>]/;
+const BLOCKED_CMD_RE = /[;&|`$(){}!<>\\n\\r]/;
 
 function isCommandSafe(cmd: string): boolean {
   if (typeof cmd !== "string" || cmd.length === 0 || cmd.length > 4096) return false;

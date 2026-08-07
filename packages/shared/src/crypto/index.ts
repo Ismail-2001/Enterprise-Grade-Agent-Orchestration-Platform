@@ -25,7 +25,7 @@ export interface EncryptedPayloadV2 {
   createdAt: string;
 }
 
-export type EncryptedPayload = EncryptedPayloadV1 | EncryptedPayloadV2;
+export type EncryptedPayload = EncryptedPayloadV2;
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -38,10 +38,6 @@ const ARGON2_PARALLELISM = 4;
 
 export function generateNonce(): Buffer {
   return crypto.randomBytes(IV_LENGTH);
-}
-
-function deriveKeyV1(keyId: string): Buffer {
-  return crypto.createHash("sha256").update(keyId).digest();
 }
 
 function deriveKeyV2(keyId: string, salt: Buffer): Buffer {
@@ -79,27 +75,15 @@ export async function encrypt(plaintext: string, keyId: string): Promise<Encrypt
   };
 }
 
-export async function decrypt(payload: EncryptedPayload, keyId: string): Promise<string> {
-  if ("version" in payload && payload.version === 2) {
-    const v2 = payload as EncryptedPayloadV2;
-    const salt = Buffer.from(v2.salt, "base64");
-    const iv = Buffer.from(v2.iv, "base64");
-    const tag = Buffer.from(v2.tag, "base64");
-    const ciphertext = Buffer.from(v2.ciphertext, "base64");
-    const key = deriveKeyV2(keyId, salt);
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(tag);
-    return decipher.update(ciphertext) + decipher.final("utf8");
-  }
-
-  const v1 = payload as EncryptedPayloadV1;
-  const key = deriveKeyV1(v1.keyId);
-  const iv = Buffer.from(v1.iv, "hex");
-  const tag = Buffer.from(v1.tag, "hex");
-  const encrypted = Buffer.from(v1.data, "hex");
+export async function decrypt(payload: EncryptedPayloadV2, keyId: string): Promise<string> {
+  const salt = Buffer.from(payload.salt, "base64");
+  const iv = Buffer.from(payload.iv, "base64");
+  const tag = Buffer.from(payload.tag, "base64");
+  const ciphertext = Buffer.from(payload.ciphertext, "base64");
+  const key = deriveKeyV2(keyId, salt);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
-  return decipher.update(encrypted) + decipher.final("utf8");
+  return decipher.update(ciphertext) + decipher.final("utf8");
 }
 
 export async function reencryptWithNewKey(oldPayload: EncryptedPayload, oldKeyId: string, newKeyId: string): Promise<EncryptedPayload> {

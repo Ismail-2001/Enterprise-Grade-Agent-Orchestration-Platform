@@ -20,7 +20,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import pino from "pino";
 import { WebSocket } from "ws";
 import { Connection, Client } from "@temporalio/client";
-import { getServerCredentials } from "@e-gaop/shared";
+import { getServerCredentials, verifyJWT } from "@e-gaop/shared";
 import { namespaceHandlers } from "./namespaces/handler";
 import { agentHandlers } from "./agents/handler";
 import { authRoutes, authenticate } from "./auth/routes";
@@ -1087,13 +1087,47 @@ fastify.get("/api/events", async (request, reply) => {
   });
 });
 
+// ── WebSocket JWT validation ──────────────────────────────────────────────
+function verifyWebSocketAuth(request: { headers: Record<string, string | string[] | undefined>; url?: string }): string | null {
+  // Check Authorization header
+  const authHeader = request.headers.authorization;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const claims = verifyJWT(authHeader.slice(7), JWT_SECRET);
+    if (claims) return claims.sub;
+  }
+
+  // Fallback: token query parameter (ws://host:port/api/ws/...?token=xxx)
+  if (request.url) {
+    try {
+      const url = new URL(request.url, "http://localhost");
+      const token = url.searchParams.get("token");
+      if (token) {
+        const claims = verifyJWT(token, JWT_SECRET);
+        if (claims) return claims.sub;
+      }
+    } catch { /* invalid URL — ignore */ }
+  }
+
+  return null;
+}
+
+const JWT_SECRET: string = process.env.JWT_SECRET || "";
+
 // WebSocket endpoint for real-time execution streaming
-// Connect to: ws://host:port/api/ws/executions/:executionId
+// Connect to: ws://host:port/api/ws/executions/:executionId?token=<JWT>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify WebSocket route option and handler
 fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async (socket: any, request: any) => {
   const { executionId } = request.params as { executionId: string };
 
-  logger.info({ executionId }, "WebSocket client connected for execution streaming");
+  // JWT authentication for WebSocket
+  const userId = verifyWebSocketAuth(request);
+  if (!userId) {
+    socket.send(JSON.stringify({ event: "error", data: { message: "Unauthorized: valid JWT required" }, timestamp: new Date().toISOString() }));
+    socket.close();
+    return;
+  }
+
+  logger.info({ executionId, userId }, "WebSocket client connected for execution streaming");
 
   // Register subscriber
   if (!executionSubscribers.has(executionId)) {
@@ -1173,8 +1207,16 @@ fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async
 const globalSubscribers = new Set<WebSocket>();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify WebSocket route option and handler
-fastify.get("/api/ws/events", { websocket: true } as any, async (socket: any) => {
-  logger.info("WebSocket client connected to global event stream");
+fastify.get("/api/ws/events", { websocket: true } as any, async (socket: any, request: any) => {
+  // JWT authentication for WebSocket
+  const userId = verifyWebSocketAuth(request);
+  if (!userId) {
+    socket.send(JSON.stringify({ event: "error", data: { message: "Unauthorized: valid JWT required" }, timestamp: new Date().toISOString() }));
+    socket.close();
+    return;
+  }
+
+  logger.info({ userId }, "WebSocket client connected to global event stream");
   globalSubscribers.add(socket);
 
   socket.send(JSON.stringify({
