@@ -4,6 +4,7 @@ import {
   type ServerInterceptor,
   type ServerMethodDefinition,
   type Metadata,
+  type StatusObject,
   ServerInterceptingCall,
 } from "@grpc/grpc-js";
 import { getTracer } from "../telemetry/index.js";
@@ -29,16 +30,33 @@ export function createTraceServerInterceptor(): ServerInterceptor {
   const tracer = getTracer();
 
   return (
-    methodDescriptor: ServerMethodDefinition<any, any>,
-    call: any
+    methodDescriptor: ServerMethodDefinition<unknown, unknown>,
+    call: ServerInterceptingCall
   ): ServerInterceptingCall => {
     const methodPath = methodDescriptor.path ?? "unknown";
     const parts = methodPath.split("/").filter(Boolean);
     const grpcService = parts.length >= 2 ? parts[0]! : "unknown";
     const grpcMethod = parts.length >= 2 ? parts[1]! : parts[parts.length - 1] ?? "unknown";
 
-    const wrappedCall: any = {
-      start: (callback: any) => {
+    const wrappedCall: {
+      start: (callback: (listener: {
+        onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => void;
+        onReceiveMessage: (message: unknown, passthrough: (m: unknown) => void) => void;
+        onReceiveHalfClose: (passthrough: () => void) => void;
+        onCancel: () => void;
+      }) => void) => void;
+      sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => void;
+      sendMessage: (message: unknown, callback: (message: unknown) => void) => void;
+      sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => void;
+      startRead: () => void;
+      getPeer: () => string;
+      getDeadline: () => Date;
+      getHost: () => string;
+      getAuthContext: () => Record<string, string[]>;
+      getConnectionInfo: () => Record<string, unknown> | null;
+      getMetricsRecorder: () => unknown;
+    } & { onServerSpan?: Span } = {
+      start: (callback) => {
         const wrappedListener = {
           onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => {
             const carrier: Record<string, string> = {};
@@ -79,36 +97,36 @@ export function createTraceServerInterceptor(): ServerInterceptor {
               passthrough(metadata);
             });
 
-            call.onServerSpan = span;
+            wrappedCall.onServerSpan = span;
           },
-          onReceiveMessage: (message: any, passthrough: (m: any) => void) => {
+          onReceiveMessage: (message: unknown, passthrough: (m: unknown) => void) => {
             passthrough(message);
           },
           onReceiveHalfClose: (passthrough: () => void) => {
             passthrough();
           },
           onCancel: () => {
-            const span = call.onServerSpan as Span | undefined;
+            const span = wrappedCall.onServerSpan;
             if (span) {
               span.setStatus({ code: SpanStatusCode.ERROR, message: "call cancelled" });
               span.end();
-              call.onServerSpan = undefined;
+              wrappedCall.onServerSpan = undefined;
             }
           },
         };
         callback(wrappedListener);
       },
-      sendMetadata: (metadata: any, callback: any) => callback(metadata),
-      sendMessage: (message: any, callback: any) => {
-        const span = call.onServerSpan as Span | undefined;
+      sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => callback(metadata),
+      sendMessage: (message: unknown, callback: (message: unknown) => void) => {
+        const span = wrappedCall.onServerSpan;
         if (span) {
           context.with(trace.setSpan(context.active(), span), () => callback(message));
         } else {
           callback(message);
         }
       },
-      sendStatus: (status: any, callback: any) => {
-        const span = call.onServerSpan as Span | undefined;
+      sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => {
+        const span = wrappedCall.onServerSpan;
         if (span) {
           const grpcStatusCode = typeof status.code === "number" ? status.code : 0;
           if (grpcStatusCode !== 0) {
@@ -125,7 +143,7 @@ export function createTraceServerInterceptor(): ServerInterceptor {
             span.setAttribute("rpc.grpc.status_code", 0);
           }
           span.end();
-          call.onServerSpan = undefined;
+          wrappedCall.onServerSpan = undefined;
         }
         callback(status);
       },
@@ -138,7 +156,7 @@ export function createTraceServerInterceptor(): ServerInterceptor {
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 
-    return new ServerInterceptingCall(call as any, wrappedCall as any);
+    return new ServerInterceptingCall(call as never, wrappedCall as never);
   };
 }
 

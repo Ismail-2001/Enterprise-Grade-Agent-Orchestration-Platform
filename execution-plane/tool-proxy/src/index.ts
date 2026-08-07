@@ -45,6 +45,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../../api/proto")]
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- proto-loader returns dynamic types with no static definitions
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const toolService = egaopProto.egaop.v1.ToolService;
 
@@ -63,12 +64,12 @@ const PII_PATTERNS: Array<{ type: string; re: RegExp }> = [
   { type: "ip_address", re: /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/ },
 ];
 
-function scanForPII(data: any): boolean {
+function scanForPII(data: unknown): boolean {
   const content = JSON.stringify(data);
   return PII_PATTERNS.some((p) => p.re.test(content));
 }
 
-function detectedPIIPatterns(data: any): string[] {
+function detectedPIIPatterns(data: unknown): string[] {
   const content = JSON.stringify(data);
   const found: string[] = [];
   for (const p of PII_PATTERNS) {
@@ -134,7 +135,7 @@ function isAllowedWebFetchHost(urlStr: string): boolean {
   }
 }
 
-function validateSandboxArgs(toolName: string, args: any): string | null {
+function validateSandboxArgs(toolName: string, args: Record<string, unknown> | undefined): string | null {
   switch (toolName) {
     case "code_interpreter": {
       const code = args?.code || args?.script || "";
@@ -178,7 +179,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url: string, opts: any, maxRetries = 3): Promise<Response> {
+async function fetchWithRetry(url: string, opts: RequestInit, maxRetries = 3): Promise<Response> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -191,7 +192,7 @@ async function fetchWithRetry(url: string, opts: any, maxRetries = 3): Promise<R
     } catch (err: unknown) {
       lastErr = err;
       // Network-level errors (ECONNRESET, ENOTFOUND, etc.) are retryable; abort is not.
-      const name = (err as any)?.name || "";
+      const name = err instanceof Error ? err.name : ((err as Record<string, unknown>)?.name as string) || "";
       if (name === "AbortError" || attempt >= maxRetries) throw err;
       await sleep(200 * 2 ** attempt);
     }
@@ -204,8 +205,13 @@ const server = new grpc.Server({
 });
 
 server.addService(toolService.service, {
-  CallTool: async (call: any, callback: any) => {
-    const { agent_id, execution_id, tool_name, args, sandbox_ip } = call.request;
+  CallTool: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
+    const req = call.request;
+    const agent_id = req.agent_id as string;
+    const execution_id = req.execution_id as string;
+    const tool_name = req.tool_name as string;
+    const args = (req.args ?? {}) as Record<string, unknown>;
+    const sandbox_ip = req.sandbox_ip as string | undefined;
     const startTime = Date.now();
 
     logger.info({ agent_id, execution_id, tool_name }, "Incoming tool invocation");
@@ -240,24 +246,25 @@ server.addService(toolService.service, {
 
     try {
       let url = config.endpoint;
-      if (url.includes("__URL__") && args?.url) {
-        if (isBlockedURL(args.url)) {
-          logger.warn({ tool_name, url: args.url }, "SSRF blocked: URL targets private/internal network");
+      if (url.includes("__URL__") && args.url) {
+        const argsUrl = args.url as string;
+        if (isBlockedURL(argsUrl)) {
+          logger.warn({ tool_name, url: argsUrl }, "SSRF blocked: URL targets private/internal network");
           return callback(null, {
             status: "failed",
             error_message: "URL targets a private or internal network address",
             latency_ms: Date.now() - startTime,
           });
         }
-        if (tool_name === "web_fetch" && !isAllowedWebFetchHost(args.url)) {
-          logger.warn({ tool_name, url: args.url }, "SSRF blocked: URL not in allowlist");
+        if (tool_name === "web_fetch" && !isAllowedWebFetchHost(argsUrl)) {
+          logger.warn({ tool_name, url: argsUrl }, "SSRF blocked: URL not in allowlist");
           return callback(null, {
             status: "failed",
             error_message: "URL is not in the allowed hosts list for web_fetch",
             latency_ms: Date.now() - startTime,
           });
         }
-        url = url.replace("__URL__", encodeURIComponent(args.url));
+        url = url.replace("__URL__", encodeURIComponent(argsUrl));
       }
 
       if (SANDBOX_TOOLS.has(tool_name)) {
@@ -288,7 +295,7 @@ server.addService(toolService.service, {
         ...creds,
       };
 
-      const fetchOpts: any = { method: config.method, headers, signal: AbortSignal.timeout(30000) };
+      const fetchOpts: RequestInit & { body?: string } = { method: config.method, headers, signal: AbortSignal.timeout(30000) };
       if (config.method === "POST" && args) {
         fetchOpts.body = JSON.stringify(args);
       }
@@ -329,16 +336,17 @@ server.addService(toolService.service, {
         latency_ms: latency,
         cost: "$0.002",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
       const latency = Date.now() - startTime;
-      logger.error({ tool_name, err: err.message }, "Tool call failed");
+      logger.error({ tool_name, err: errObj.message }, "Tool call failed");
 
       try {
         createAuditEntry(
           "agent.tool_call",
           "error",
           { type: "agent", id: agent_id },
-          { name: tool_name, result: "error", reason: err.message },
+          { name: tool_name, result: "error", reason: errObj.message },
           { type: "tool", id: tool_name },
         );
       } catch { /* audit failure is non-fatal */ }
@@ -353,7 +361,7 @@ server.addService(toolService.service, {
 });
 
 server.addService(HEALTH_SERVICE, {
-  check: (_call: any, callback: any) => {
+  check: (_call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     callback(null, { status: "SERVING" });
   }
 });

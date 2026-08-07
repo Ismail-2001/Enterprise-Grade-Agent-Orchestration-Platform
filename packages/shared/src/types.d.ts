@@ -10,11 +10,16 @@ declare module "@opentelemetry/exporter-trace-otlp-http" {
 declare module "@opentelemetry/exporter-prometheus" {
   export class PrometheusExporter {
     constructor(config?: Record<string, unknown>);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external library types
     selectAggregation(): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external library types
     selectAggregationTemporality(): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external library types
     selectCardinalityLimit(): any;
     setMetricProducer(metricProducer: unknown): void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external library types
     getMetricsData(): Promise<any>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- external library types
     collect(): Promise<any>;
     shutdown(): Promise<void>;
     forceFlush(): Promise<void>;

@@ -61,6 +61,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../../api/proto")],
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- proto-loader returns dynamic types with no static definitions
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const runtimeService = egaopProto.egaop.v1.RuntimeService;
 
@@ -69,7 +70,7 @@ const server = new grpc.Server({
 });
 
 server.addService(runtimeService.service, {
-  CreateSandbox: async (call: any, callback: any) => {
+  CreateSandbox: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     const { agent_id, execution_id, image, isolation_level, resources, env_vars, init_commands } = call.request;
 
     logger.info({ agent_id, execution_id, isolation_level }, "Creating sandbox...");
@@ -105,16 +106,18 @@ server.addService(runtimeService.service, {
         ip_address: result.ipAddress,
         init_outputs: result.initOutputs,
       });
-    } catch (err: any) {
-      logger.error({ err: err.message }, "Sandbox creation failed");
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      const errRecord = err as Record<string, unknown>;
+      logger.error({ err: errObj.message }, "Sandbox creation failed");
       callback({
-        code: err.code === "INVALID_ARGUMENT" ? grpc.status.INVALID_ARGUMENT : grpc.status.INTERNAL,
-        message: err.code === "INVALID_ARGUMENT" ? err.message : "Sandbox creation failed",
+        code: errRecord?.code === "INVALID_ARGUMENT" ? grpc.status.INVALID_ARGUMENT : grpc.status.INTERNAL,
+        message: errRecord?.code === "INVALID_ARGUMENT" ? errObj.message : "Sandbox creation failed",
       });
     }
   },
 
-  TerminateSandbox: async (call: any, callback: any) => {
+  TerminateSandbox: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     const { sandbox_id, reason } = call.request;
     logger.info({ sandbox_id, reason }, "Terminating sandbox...");
 
@@ -134,13 +137,14 @@ server.addService(runtimeService.service, {
       }
 
       callback(null, { success });
-    } catch (err: any) {
-      logger.error({ err: err.message }, "Failed to terminate sandbox");
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      logger.error({ err: errObj.message }, "Failed to terminate sandbox");
       callback(null, { success: false });
     }
   },
 
-  GetSandboxStatus: async (call: any, callback: any) => {
+  GetSandboxStatus: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     const { sandbox_id } = call.request;
     try {
       const status = await sandboxDriver.getSandboxStatus(sandbox_id);
@@ -168,7 +172,7 @@ server.addService(runtimeService.service, {
 });
 
 server.addService(HEALTH_SERVICE, {
-  check: async (_call: any, callback: any) => {
+  check: async (_call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     try {
       const ok = await sandboxDriver.health();
       callback(null, { status: ok ? "SERVING" : "NOT_SERVING" });

@@ -88,11 +88,12 @@ export const namespaceHandlers = {
       } catch { /* audit failure is non-fatal */ }
 
       callback(null, toProtoNamespace(ns));
-    } catch (err: any) {
-      if (err.code === "23505") {
+    } catch (err: unknown) {
+      const e = err as { code?: string; message?: string };
+      if (e.code === "23505") {
         callback(new Error(`Namespace already exists: ${slug}`));
       } else {
-        callback(new Error(`Failed to create namespace: ${err.message}`));
+        callback(new Error(`Failed to create namespace: ${e.message}`));
       }
     }
   },
@@ -106,8 +107,9 @@ export const namespaceHandlers = {
         return;
       }
       callback(null, toProtoNamespace(ns));
-    } catch (err: any) {
-      callback(new Error(`Failed to get namespace: ${err.message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      callback(new Error(`Failed to get namespace: ${message}`));
     }
   },
 
@@ -123,8 +125,9 @@ export const namespaceHandlers = {
         next_page_token: result.nextPageToken,
         total_count: result.totalCount,
       });
-    } catch (err: any) {
-      callback(new Error(`Failed to list namespaces: ${err.message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      callback(new Error(`Failed to list namespaces: ${message}`));
     }
   },
 
@@ -146,8 +149,9 @@ export const namespaceHandlers = {
       }
       logger.info({ slug }, "Namespace updated");
       callback(null, toProtoNamespace(ns));
-    } catch (err: any) {
-      callback(new Error(`Failed to update namespace: ${err.message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      callback(new Error(`Failed to update namespace: ${message}`));
     }
   },
 
@@ -172,8 +176,9 @@ export const namespaceHandlers = {
       } catch { /* audit failure is non-fatal */ }
 
       callback(null, toProtoNamespace(ns));
-    } catch (err: any) {
-      callback(new Error(`Failed to suspend namespace: ${err.message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      callback(new Error(`Failed to suspend namespace: ${message}`));
     }
   },
 
@@ -198,8 +203,9 @@ export const namespaceHandlers = {
       } catch { /* audit failure is non-fatal */ }
 
       callback(null, {});
-    } catch (err: any) {
-      callback(new Error(`Failed to delete namespace: ${err.message}`));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      callback(new Error(`Failed to delete namespace: ${message}`));
     }
   },
 };

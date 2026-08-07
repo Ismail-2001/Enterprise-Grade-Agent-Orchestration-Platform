@@ -25,12 +25,42 @@ async function getK8s(): Promise<K8sModule> {
   return _k8sCache;
 }
 
-export class K8sSandboxRuntime {
-  private k8sApi: any;
-  private namespace: string;
-  private kc: any;
+interface K8sPodMetadata {
+  name?: string;
+}
 
-  constructor(kubeConfig?: any) {
+interface K8sPodStatus {
+  phase?: string;
+  podIP?: string;
+}
+
+interface K8sPodResult {
+  metadata?: K8sPodMetadata;
+  status?: K8sPodStatus;
+}
+
+interface K8sExecStatus {
+  status?: string;
+}
+
+interface K8sApi {
+  createNamespacedPod(params: { namespace: string; body: unknown }): Promise<K8sPodResult>;
+  readNamespacedPod(params: { namespace: string; name: string }): Promise<K8sPodResult>;
+  deleteNamespacedPod(params: { namespace: string; name: string; gracePeriodSeconds: number }): Promise<void>;
+  listNamespacedPod(params: { namespace: string; limit: number }): Promise<{ items: unknown[] }>;
+}
+
+interface K8sKubeConfig {
+  loadFromDefault(): void;
+  makeApiClient(ApiClient: unknown): K8sApi;
+}
+
+export class K8sSandboxRuntime {
+  private k8sApi: K8sApi | null = null;
+  private namespace: string;
+  private kc: K8sKubeConfig | null;
+
+  constructor(kubeConfig?: K8sKubeConfig) {
     this.namespace = process.env.K8S_NAMESPACE || "egaop";
     this.kc = kubeConfig ?? null;
   }
@@ -39,17 +69,17 @@ export class K8sSandboxRuntime {
     if (this.k8sApi) return;
     const k8s = await getK8s();
     if (!this.kc) {
-      this.kc = new k8s.KubeConfig();
+      this.kc = new k8s.KubeConfig() as unknown as K8sKubeConfig;
       this.kc.loadFromDefault();
     }
-    this.k8sApi = this.kc.makeApiClient(k8s.CoreV1Api);
+    this.k8sApi = this.kc.makeApiClient(k8s.CoreV1Api as unknown);
   }
 
   async createSandbox(spec: SandboxSpec): Promise<Sandbox> {
     await this.ensureInit();
     const initOutputs: string[] = [];
 
-    const pod: any = {
+    const pod = {
       metadata: {
         name: `egaop-agent-${spec.executionId}`,
         namespace: this.namespace,
@@ -101,13 +131,13 @@ export class K8sSandboxRuntime {
       },
     };
 
-    const result = await this.k8sApi.createNamespacedPod({ namespace: this.namespace, body: pod });
+    const result = await this.k8sApi!.createNamespacedPod({ namespace: this.namespace, body: pod });
     const podName: string = result.metadata?.name ?? "";
 
     let ip = "unknown";
     let attempts = 0;
     while (attempts < 30) {
-      const read = await this.k8sApi.readNamespacedPod({ namespace: this.namespace, name: podName });
+      const read = await this.k8sApi!.readNamespacedPod({ namespace: this.namespace, name: podName });
       const phase: string | undefined = read.status?.phase;
       ip = read.status?.podIP ?? ip;
       if (phase === "Running" || phase === "Succeeded") break;
@@ -138,7 +168,7 @@ export class K8sSandboxRuntime {
   async terminateSandbox(podName: string): Promise<void> {
     await this.ensureInit();
     try {
-      await this.k8sApi.deleteNamespacedPod({
+      await this.k8sApi!.deleteNamespacedPod({
         namespace: this.namespace,
         name: podName,
         gracePeriodSeconds: 5,
@@ -150,11 +180,11 @@ export class K8sSandboxRuntime {
 
   private async execInPod(podName: string, command: string[]): Promise<string> {
     const k8s = await getK8s();
-    const exec = new k8s.Exec(this.kc);
+    const exec = new k8s.Exec(this.kc as unknown as k8s.KubeConfig);
     return new Promise((resolve, reject) => {
       let output = "";
       const stdout = new Writable({
-        write(chunk: any, _encoding: string, cb: () => void) {
+        write(chunk: Buffer, _encoding: BufferEncoding, cb: () => void) {
           output += chunk.toString();
           cb();
         },
@@ -168,7 +198,7 @@ export class K8sSandboxRuntime {
         stdout,
         null,
         false,
-        (status: any) => {
+        (status: K8sExecStatus | null) => {
           if (status?.status === "Success") resolve(output);
           else reject(new Error(`exec returned ${status?.status ?? "Failure"}`));
         },

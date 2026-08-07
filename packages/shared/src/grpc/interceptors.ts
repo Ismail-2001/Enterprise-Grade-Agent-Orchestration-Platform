@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Interceptor, InterceptingCall, InterceptorOptions, NextCall, Metadata, Requester, InterceptingListener, StatusObject, status as GrpcStatus } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerMethodDefinition } from "@grpc/grpc-js";
-import { ServerInterceptingCall } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCall } from "@grpc/grpc-js";
+import { ServerInterceptingCall as ServerInterceptingCallImpl } from "@grpc/grpc-js";
 import { spanEnrichmentInterceptor } from "./span-enrichment.js";
 
 const RETRYABLE_CODES = new Set([
@@ -100,13 +100,30 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
   const expectedToken = process.env.INTERNAL_SERVICE_TOKEN ?? "";
 
   return (
-    methodDescriptor: ServerMethodDefinition<any, any>,
-    call: any
-  ): ServerInterceptingCall => {
+    methodDescriptor: ServerMethodDefinition<unknown, unknown>,
+    call: ServerInterceptingCall
+  ): ServerInterceptingCallImpl => {
     const methodPath = methodDescriptor.path ?? "unknown";
 
-    const wrappedCall: any = {
-      start: (callback: any) => {
+    const wrappedCall: {
+      start: (callback: (listener: {
+        onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => void;
+        onReceiveMessage: (message: unknown, passthrough: (m: unknown) => void) => void;
+        onReceiveHalfClose: (passthrough: () => void) => void;
+        onCancel: () => void;
+      }) => void) => void;
+      sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => void;
+      sendMessage: (message: unknown, callback: (message: unknown) => void) => void;
+      sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => void;
+      startRead: () => void;
+      getPeer: () => string;
+      getDeadline: () => Date;
+      getHost: () => string;
+      getAuthContext: () => Record<string, string[]>;
+      getConnectionInfo: () => Record<string, unknown> | null;
+      getMetricsRecorder: () => unknown;
+    } = {
+      start: (callback) => {
         const wrappedListener = {
           onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => {
             if (!expectedToken) {
@@ -138,7 +155,7 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
 
             passthrough(metadata);
           },
-          onReceiveMessage: (message: any, passthrough: (m: any) => void) => {
+          onReceiveMessage: (message: unknown, passthrough: (m: unknown) => void) => {
             passthrough(message);
           },
           onReceiveHalfClose: (passthrough: () => void) => {
@@ -148,9 +165,9 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
         };
         callback(wrappedListener);
       },
-      sendMetadata: (metadata: any, callback: any) => callback(metadata),
-      sendMessage: (message: any, callback: any) => callback(message),
-      sendStatus: (status: any, callback: any) => callback(status),
+      sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => callback(metadata),
+      sendMessage: (message: unknown, callback: (message: unknown) => void) => callback(message),
+      sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => callback(status),
       startRead: () => call.startRead(),
       getPeer: () => call.getPeer(),
       getDeadline: () => call.getDeadline(),
@@ -160,7 +177,7 @@ export function createServiceTokenServerInterceptor(): ServerInterceptor {
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 
-    return new ServerInterceptingCall(call as any, wrappedCall as any);
+    return new ServerInterceptingCallImpl(call as never, wrappedCall as never);
   };
 }
 

@@ -32,8 +32,8 @@ const HEALTH_SERVICE: grpc.ServiceDefinition = {
     path: "/grpc.health.v1.Health/Check",
     requestStream: false,
     responseStream: false,
-    requestSerialize: (v: any) => Buffer.from(JSON.stringify(v)),
-    responseSerialize: (v: any) => Buffer.from(JSON.stringify(v)),
+    requestSerialize: (v: unknown) => Buffer.from(JSON.stringify(v)),
+    responseSerialize: (v: unknown) => Buffer.from(JSON.stringify(v)),
     requestDeserialize: (b: Buffer) => JSON.parse(b.toString()),
     responseDeserialize: (b: Buffer) => JSON.parse(b.toString()),
   },
@@ -108,6 +108,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../api/proto")]
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped GrpcObject
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const memoryService = egaopProto.egaop.v1.MemoryService;
 
@@ -122,8 +123,8 @@ function sanitizeKeyComponent(value: string): string {
 }
 
 server.addService(memoryService.service, {
-  Read: async (call: any, callback: any) => {
-    const { agent_id, namespace, memory_type, key } = call.request;
+  Read: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { agent_id, namespace, memory_type, key } = call.request as Record<string, unknown>;
 
     logger.info({ agent_id, namespace, memory_type, key }, "Memory read request");
 
@@ -134,7 +135,7 @@ server.addService(memoryService.service, {
       const safeKey = sanitizeKeyComponent(key);
 
       // Fast path: try Redis first
-      let data: any = null;
+      let data: unknown = null;
       const redisKey = `egaop:${safeNs}:${safeAgent}:${safeType}:${safeKey}`;
       const raw = await redis.get(redisKey);
       if (raw) {
@@ -151,20 +152,20 @@ server.addService(memoryService.service, {
             const ttl = memory_type === "working" ? 300 : 86400;
             await redis.setex(redisKey, ttl, JSON.stringify(data));
           }
-        } catch (pgErr: any) {
-          logger.warn({ err: pgErr.message }, "PostgreSQL read fallback failed");
+        } catch (pgErr: unknown) {
+          logger.warn({ err: pgErr instanceof Error ? pgErr.message : String(pgErr) }, "PostgreSQL read fallback failed");
         }
       }
 
       callback(null, { data: data || {}, found: !!data });
-    } catch (err: any) {
-      logger.error({ err: err.message }, "Memory read error");
+    } catch (err: unknown) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "Memory read error");
       callback(null, { data: {}, found: false });
     }
   },
 
-  Write: async (call: any, callback: any) => {
-    const { agent_id, namespace, memory_type, key, data, ttl_seconds } = call.request;
+  Write: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { agent_id, namespace, memory_type, key, data, ttl_seconds } = call.request as Record<string, unknown>;
 
     logger.info({ agent_id, namespace, memory_type, key }, "Memory write request");
 
@@ -201,14 +202,14 @@ server.addService(memoryService.service, {
       } catch { /* audit failure is non-fatal */ }
 
       callback(null, { status: "success", version: `rev-${Date.now()}` });
-    } catch (err: any) {
-      logger.error({ err: err.message }, "Memory write error");
+    } catch (err: unknown) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, "Memory write error");
       callback(null, { status: "error", version: "" });
     }
   },
 
-  Delete: async (call: any, callback: any) => {
-    const { agent_id, namespace, memory_type, key } = call.request;
+  Delete: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { agent_id, namespace, memory_type, key } = call.request as Record<string, unknown>;
     try {
       const safeNs = sanitizeKeyComponent(namespace);
       const safeAgent = sanitizeKeyComponent(agent_id);
@@ -233,13 +234,13 @@ server.addService(memoryService.service, {
       } catch { /* audit failure is non-fatal */ }
 
       callback(null, { status: "success" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       callback(null, { status: "error" });
     }
   },
 
-  List: async (call: any, callback: any) => {
-    const { agent_id, namespace, memory_type } = call.request;
+  List: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { agent_id, namespace, memory_type } = call.request as Record<string, unknown>;
     try {
       const safeNs = sanitizeKeyComponent(namespace);
       const safeAgent = sanitizeKeyComponent(agent_id);
@@ -247,7 +248,7 @@ server.addService(memoryService.service, {
 
       // Try Redis first
       const pattern = `egaop:${safeNs}:${safeAgent}:${safeType}:*`;
-      const entries: any[] = [];
+      const entries: Array<{ key: string; data: unknown }> = [];
       const stream = redis.scanStream({ match: pattern, count: 100 });
       for await (const keys of stream) {
         for (const k of keys) {
@@ -264,20 +265,20 @@ server.addService(memoryService.service, {
           for (const entry of pgEntries) {
             entries.push({ key: entry.key, data: entry.value });
           }
-        } catch (pgErr: any) {
-          logger.warn({ err: pgErr.message }, "PostgreSQL list fallback failed");
+        } catch (pgErr: unknown) {
+          logger.warn({ err: pgErr instanceof Error ? pgErr.message : String(pgErr) }, "PostgreSQL list fallback failed");
         }
       }
 
       callback(null, { entries });
-    } catch (err: any) {
+    } catch (err: unknown) {
       callback(null, { entries: [] });
     }
   },
 });
 
 server.addService(HEALTH_SERVICE, {
-  check: async (_call: any, callback: any) => {
+  check: async (_call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
     try {
       await Promise.all([redis.ping(), pgPool.query("SELECT 1")]);
       callback(null, { status: "SERVING" });
@@ -340,8 +341,8 @@ if (process.env.NODE_ENV !== "test") {
               similarity: r.similarity,
             })),
           }));
-        } catch (err: any) {
-          logger.error({ err: err.message }, "Vector search error");
+        } catch (err: unknown) {
+          logger.error({ err: err instanceof Error ? err.message : String(err) }, "Vector search error");
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Search failed" }));
         }

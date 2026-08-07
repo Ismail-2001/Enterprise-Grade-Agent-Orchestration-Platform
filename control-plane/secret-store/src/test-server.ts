@@ -41,6 +41,7 @@ export async function createServerBundle(config: {
     includeDirs: [path.resolve(__dirname, "../../../api/proto")]
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped structure
   const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
   const secretService = egaopProto.egaop.v1.SecretService;
 
@@ -49,6 +50,7 @@ export async function createServerBundle(config: {
   });
 
   grpcServer.addService(secretService.service, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
     CreateSecret: async (call: any, callback: any) => {
       const { name, namespace, data, type } = call.request;
       try {
@@ -69,11 +71,13 @@ export async function createServerBundle(config: {
             rotation: { enabled: true, interval: "24h", strategy: "aes-256-gcm" }
           }
         });
-      } catch (err: any) {
-        callback({ code: grpc.status.INTERNAL, message: `Encryption or persistence failed: ${err.message}` });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        callback({ code: grpc.status.INTERNAL, message: `Encryption or persistence failed: ${message}` });
       }
     },
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
     GetSecret: async (call: any, callback: any) => {
       const { name, namespace, agent_id } = call.request;
       if (!agent_id || extractNamespace(agent_id) !== namespace) {
@@ -90,13 +94,15 @@ export async function createServerBundle(config: {
           metadata: { name, namespace },
           spec: { type: row.type, data: decryptedData }
         });
-      } catch (err: any) {
-        callback({ code: grpc.status.INTERNAL, message: `Retrieval or decryption failed: ${err.message}` });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        callback({ code: grpc.status.INTERNAL, message: `Retrieval or decryption failed: ${message}` });
       }
     }
   });
 
   grpcServer.addService(HEALTH_SERVICE, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
     check: (_call: any, callback: any) => {
       callback(null, { status: "SERVING" });
     }

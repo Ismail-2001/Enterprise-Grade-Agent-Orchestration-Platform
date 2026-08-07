@@ -16,7 +16,7 @@ export interface GrpcServiceConfig {
   protoPath: string;
   packageDefinition: protoLoader.Options;
   serviceName: string;
-  serviceDefinition: grpc.ServiceDefinition<any>;
+  serviceDefinition: grpc.ServiceDefinition<grpc.UntypedHandleCall>;
   implementation: grpc.UntypedServiceImplementation;
 }
 
@@ -66,7 +66,8 @@ export class GrpcServer {
         includeDirs: [path.dirname(svc.protoPath)],
         ...svc.packageDefinition,
       });
-      const proto = grpc.loadPackageDefinition(pkgDef) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const proto = grpc.loadPackageDefinition(pkgDef) as Record<string, any>;
       const sd = proto[svc.serviceName.replace(/\./g, "._")]?.service ?? svc.serviceDefinition;
       if (sd) {
         this.server.addService(sd, svc.implementation);
@@ -130,7 +131,11 @@ function getServiceClient<T>(targetService: string, port: number, serviceName: s
     ? createMTLSClientCredentials(certDir)
     : grpc.credentials.createInsecure();
 
-  return new (grpc as any).makeGenericClientConstructor(
+  return new (grpc as unknown as { makeGenericClientConstructor: new (
+    serviceDefinition: Record<string, unknown>,
+    serviceName: string,
+    options: { channelCredentials: grpc.ChannelCredentials }
+  ) => new (address: string) => T }).makeGenericClientConstructor(
     {},
     `${targetService}.${serviceName}`,
     { channelCredentials: credentials }

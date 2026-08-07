@@ -157,7 +157,7 @@ export function verifyAuditChain(entries: AuditEntry[]): boolean {
   let previousHash = "0000000000000000000000000000000000000000000000000000000000000000";
   for (const entry of entries) {
     const { integrity, ...rest } = entry;
-    const expectedHash = hashEntry(rest as any, previousHash);
+    const expectedHash = hashEntry(rest as Omit<AuditEntry, "integrity">, previousHash);
     if (integrity.previousHash !== expectedHash) return false;
     previousHash = integrity.previousHash;
   }

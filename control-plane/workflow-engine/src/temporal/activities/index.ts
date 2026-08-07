@@ -328,6 +328,7 @@ export async function* callLLMStream(params: CallLLMParams): AsyncGenerator<LLMS
   );
 
   if (call && typeof call.on === "function") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- gRPC stream chunk from dynamic proto
     call.on("data", (chunk: any) => {
       queue.push({
         content: chunk.content ?? "",

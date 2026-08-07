@@ -47,8 +47,9 @@ async function isTokenRevoked(token: string): Promise<boolean> {
   try {
     const exists = await redisClient.exists(tokenRevocationKey(token));
     return exists === 1;
-  } catch (err: any) {
-    logger.warn({ err: err.message }, "Token revocation check failed — failing open");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: message }, "Token revocation check failed — failing open");
     return false;
   }
 }
@@ -62,8 +63,9 @@ async function revokeToken(token: string): Promise<void> {
   }
   try {
     await redisClient.set(tokenRevocationKey(token), "1", "EX", ttl);
-  } catch (err: any) {
-    logger.warn({ err: err.message }, "Token revocation write failed — token may remain valid");
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: message }, "Token revocation write failed — token may remain valid");
   }
 }
 

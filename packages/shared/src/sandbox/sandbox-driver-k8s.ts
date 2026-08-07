@@ -1,7 +1,8 @@
 import type { SandboxDriver, SandboxResult, SandboxSpec } from "./sandbox-driver.js";
+import type { K8sSandboxRuntime } from "./k8s-sandbox-runtime.js";
 
 export class K8sSandboxDriver implements SandboxDriver {
-  private runtime: any;
+  private runtime: K8sSandboxRuntime | null = null;
   private initialized = false;
 
   async ensure(): Promise<void> {

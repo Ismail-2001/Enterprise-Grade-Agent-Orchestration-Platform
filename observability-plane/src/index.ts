@@ -20,8 +20,8 @@ const HEALTH_SERVICE: grpc.ServiceDefinition = {
     path: "/grpc.health.v1.Health/Check",
     requestStream: false,
     responseStream: false,
-    requestSerialize: (v: any) => Buffer.from(JSON.stringify(v)),
-    responseSerialize: (v: any) => Buffer.from(JSON.stringify(v)),
+    requestSerialize: (v: unknown) => Buffer.from(JSON.stringify(v)),
+    responseSerialize: (v: unknown) => Buffer.from(JSON.stringify(v)),
     requestDeserialize: (b: Buffer) => JSON.parse(b.toString()),
     responseDeserialize: (b: Buffer) => JSON.parse(b.toString()),
   },
@@ -64,19 +64,30 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../api/proto")]
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped GrpcObject
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const obsService = egaopProto.egaop.v1.ObservabilityService;
 
+interface StoredSpan {
+  span_id?: string;
+  name?: string;
+  start_time?: { seconds?: number } | null;
+  end_time?: { seconds?: number } | null;
+  attributes?: {
+    fields?: Record<string, { stringValue?: string }>;
+  };
+}
+
 // In-memory cache for hot traces (recent spans quick access)
-const traceStore: Map<string, any[]> = new Map();
+const traceStore: Map<string, StoredSpan[]> = new Map();
 
 const server = new grpc.Server({
   interceptors: [createNamespaceServerInterceptor(), createServiceTokenServerInterceptor(), createTraceServerInterceptor()],
 });
 
 server.addService(obsService.service, {
-  ExportTrace: async (call: any, callback: any) => {
-    const { execution_id, span_id, name, start_time, end_time, attributes } = call.request;
+  ExportTrace: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { execution_id, span_id, name, start_time, end_time, attributes } = call.request as Record<string, unknown>;
 
     logger.info({ execution_id, span_id, name }, "Ingesting observability span...");
 
@@ -101,8 +112,8 @@ server.addService(obsService.service, {
         events: [],
       };
       await obsRepo.ingestSpan(span);
-    } catch (pgErr: any) {
-      logger.warn({ err: pgErr.message, execution_id }, "PostgreSQL span ingestion failed");
+    } catch (pgErr: unknown) {
+      logger.warn({ err: pgErr instanceof Error ? pgErr.message : String(pgErr), execution_id }, "PostgreSQL span ingestion failed");
     }
 
     const cost = attributes?.fields?.['egaop.llm.cost']?.stringValue || "$0.00";
@@ -113,13 +124,13 @@ server.addService(obsService.service, {
     callback(null, { success: true });
   },
 
-  GetExecutionReplay: async (call: any, callback: any) => {
-    const { execution_id } = call.request;
+  GetExecutionReplay: async (call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
+    const { execution_id } = call.request as Record<string, unknown>;
 
     logger.info({ execution_id }, "Constructing Execution Replay bundle...");
 
     // Try PostgreSQL first (durable), fall back to in-memory
-    let spans: any[] = [];
+    let spans: StoredSpan[] = [];
 
     try {
       const pgSpans = await obsRepo.getTrace(execution_id, "default");
@@ -132,8 +143,8 @@ server.addService(obsService.service, {
           attributes: s.attributes,
         }));
       }
-    } catch (pgErr: any) {
-      logger.warn({ err: pgErr.message, execution_id }, "PostgreSQL replay query failed, falling back to memory");
+    } catch (pgErr: unknown) {
+      logger.warn({ err: pgErr instanceof Error ? pgErr.message : String(pgErr), execution_id }, "PostgreSQL replay query failed, falling back to memory");
     }
 
     // Fall back to in-memory store
@@ -151,7 +162,7 @@ server.addService(obsService.service, {
     // Calculate real total cost from span attributes
     let totalCost = 0;
     let totalDurationMs = 0;
-    const steps = spans.map((s: any, idx: number) => {
+    const steps = spans.map((s, idx) => {
       const costStr = s.attributes?.fields?.['egaop.llm.cost']?.stringValue || "$0.00";
       const costVal = parseFloat(costStr.replace("$", "")) || 0;
       totalCost += costVal;
@@ -194,7 +205,7 @@ server.addService(obsService.service, {
 });
 
 server.addService(HEALTH_SERVICE, {
-  check: async (_call: any, callback: any) => {
+  check: async (_call: grpc.ServerUnaryCall<unknown, unknown>, callback: grpc.sendUnaryData<unknown>) => {
     try {
       await pgPool.query("SELECT 1");
       callback(null, { status: "SERVING" });

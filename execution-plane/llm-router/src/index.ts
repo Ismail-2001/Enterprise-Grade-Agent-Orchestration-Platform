@@ -13,6 +13,7 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import pino from "pino";
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions/completions";
 import CircuitBreaker from "opossum";
 import { countTokensForModel } from "./tokens.js";
 import { detectPromptInjection, scanMessagesForInjection } from "./prompt-injection.js";
@@ -50,8 +51,56 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../../api/proto")]
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- proto-loader returns dynamic types with no static definitions
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const llmService = egaopProto.egaop.v1.LLMService;
+
+interface LLMMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_call_id?: string;
+  name?: string;
+  tool_calls?: Array<{ id: string; name: string; args: string | Record<string, unknown> }>;
+}
+
+interface AnthropicContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+}
+
+interface AnthropicResponse {
+  content?: AnthropicContentBlock[];
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
+interface OllamaToolCall {
+  function?: { name?: string; arguments?: Record<string, unknown> };
+  name?: string;
+  arguments?: Record<string, unknown>;
+}
+
+interface OllamaResponse {
+  message?: { content?: string; tool_calls?: OllamaToolCall[] };
+  prompt_eval_count?: number;
+  eval_count?: number;
+}
+
+interface AnthropicStreamEvent {
+  type: string;
+  message?: { usage?: { input_tokens: number } };
+  delta?: { type?: string; text?: string; stop_reason?: string };
+  usage?: { output_tokens: number };
+}
+
+interface OllamaStreamEvent {
+  message?: { content?: string };
+  done?: boolean;
+  prompt_eval_count?: number;
+  eval_count?: number;
+}
 
 // ─── Multi-Model Pricing (OpenAI, Anthropic, Ollama/local) ──────────────
 
@@ -102,15 +151,17 @@ async function retryWithBackoff<T>(
   maxRetries: number = 3,
   baseDelayMs: number = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
-      if (attempt < maxRetries && (err instanceof LLMRateLimitError || err.status === 429)) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      const status = (err as Record<string, unknown>)?.status;
+      if (attempt < maxRetries && (err instanceof LLMRateLimitError || status === 429)) {
         const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 500;
-        logger.warn({ attempt, delay_ms: Math.round(delay), err: err.message }, "Rate limited, retrying with backoff");
+        logger.warn({ attempt, delay_ms: Math.round(delay), err: errObj.message }, "Rate limited, retrying with backoff");
         await new Promise((r) => setTimeout(r, delay));
       } else {
         throw err;
@@ -147,7 +198,7 @@ function overallCircuitState(): ProviderState {
   return "closed";
 }
 
-function createProviderBreaker(provider: ModelProvider, fn: (...args: any[]) => Promise<any>): CircuitBreaker {
+function createProviderBreaker(provider: ModelProvider, fn: (...args: unknown[]) => Promise<unknown>): CircuitBreaker {
   const breaker = new CircuitBreaker(fn, circuitBreakerOptions);
   breaker.on("open", () => {
     providerStates[provider] = "open";
@@ -243,7 +294,7 @@ interface ToolCallResult {
 // ─── Anthropic API Call ────────────────────────────────────────────────────
 
 async function callAnthropic(
-  messages: any[],
+  messages: LLMMessage[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -255,13 +306,13 @@ async function callAnthropic(
   }
 
   // Anthropic uses a separate system message
-  const systemMsg = messages.find((m: any) => m.role === "system");
-  const nonSystemMsgs = messages.filter((m: any) => m.role !== "system");
+  const systemMsg = messages.find((m) => m.role === "system");
+  const nonSystemMsgs = messages.filter((m) => m.role !== "system");
 
   const body: Record<string, unknown> = {
     model,
     max_tokens: Math.min(maxTokens || 4096, 16384),
-    messages: nonSystemMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+    messages: nonSystemMsgs.map((m) => ({ role: m.role, content: m.content })),
   };
   if (systemMsg) body.system = systemMsg.content;
   if (temperature !== undefined) body.temperature = temperature;
@@ -287,18 +338,17 @@ async function callAnthropic(
 
   if (!response.ok) {
     const errBody = await response.text();
-    const err: any = new Error(`Anthropic API error ${response.status}: ${errBody}`);
-    err.status = response.status;
+    const err = Object.assign(new Error(`Anthropic API error ${response.status}: ${errBody}`), { status: response.status });
     throw err;
   }
 
-  const data = await response.json() as any;
-  const content = data.content?.find((c: any) => c.type === "text")?.text ?? null;
-  const toolUseBlocks = data.content?.filter((c: any) => c.type === "tool_use") ?? [];
+  const data = await response.json() as AnthropicResponse;
+  const content = data.content?.find((c) => c.type === "text")?.text ?? null;
+  const toolUseBlocks = data.content?.filter((c) => c.type === "tool_use") ?? [];
 
-  const toolCalls: ToolCallResult[] = toolUseBlocks.map((tc: any) => ({
-    id: tc.id,
-    name: tc.name,
+  const toolCalls: ToolCallResult[] = toolUseBlocks.map((tc) => ({
+    id: tc.id ?? "",
+    name: tc.name ?? "",
     arguments: JSON.stringify(tc.input),
   }));
 
@@ -317,7 +367,7 @@ async function callAnthropic(
 // ─── Ollama API Call ───────────────────────────────────────────────────────
 
 async function callOllama(
-  messages: any[],
+  messages: LLMMessage[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -326,7 +376,7 @@ async function callOllama(
 ): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
   const body: Record<string, unknown> = {
     model,
-    messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
     stream: false,
     options: {
       temperature,
@@ -354,14 +404,13 @@ async function callOllama(
 
   if (!response.ok) {
     const errBody = await response.text();
-    const err: any = new Error(`Ollama API error ${response.status}: ${errBody}`);
-    err.status = response.status;
+    const err = Object.assign(new Error(`Ollama API error ${response.status}: ${errBody}`), { status: response.status });
     throw err;
   }
 
-  const data = await response.json() as any;
+  const data = await response.json() as OllamaResponse;
   const msg = data.message;
-  const toolCalls: ToolCallResult[] = (msg?.tool_calls ?? []).map((tc: any) => ({
+  const toolCalls: ToolCallResult[] = (msg?.tool_calls ?? []).map((tc) => ({
     id: `ollama-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: tc.function?.name ?? tc.name ?? "unknown",
     arguments: JSON.stringify(tc.function?.arguments ?? tc.arguments ?? {}),
@@ -408,7 +457,7 @@ async function* streamLines(body: ReadableStream | null): AsyncGenerator<string>
 }
 
 async function* streamOpenAIProvider(
-  openaiMessages: any[],
+  openaiMessages: ChatCompletionMessageParam[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -451,7 +500,7 @@ async function* streamOpenAIProvider(
 }
 
 async function* streamAnthropic(
-  messages: any[],
+  messages: LLMMessage[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -462,13 +511,13 @@ async function* streamAnthropic(
     throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
-  const systemMsg = messages.find((m: any) => m.role === "system");
-  const nonSystemMsgs = messages.filter((m: any) => m.role !== "system");
+  const systemMsg = messages.find((m) => m.role === "system");
+  const nonSystemMsgs = messages.filter((m) => m.role !== "system");
 
   const body: Record<string, unknown> = {
     model,
     max_tokens: Math.min(maxTokens || 4096, 16384),
-    messages: nonSystemMsgs.map((m: any) => ({ role: m.role, content: m.content })),
+    messages: nonSystemMsgs.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
   };
   if (systemMsg) body.system = systemMsg.content;
@@ -487,8 +536,7 @@ async function* streamAnthropic(
 
   if (!response.ok) {
     const errBody = await response.text();
-    const err: any = new Error(`Anthropic API error ${response.status}: ${errBody}`);
-    err.status = response.status;
+    const err = Object.assign(new Error(`Anthropic API error ${response.status}: ${errBody}`), { status: response.status });
     throw err;
   }
 
@@ -499,7 +547,7 @@ async function* streamAnthropic(
     const payload = line.slice(5).trim();
     if (!payload || payload === "[DONE]") continue;
     try {
-      const evt = JSON.parse(payload) as any;
+      const evt = JSON.parse(payload) as AnthropicStreamEvent;
       if (evt.type === "message_start") {
         promptTokens = evt.message?.usage?.input_tokens ?? 0;
       } else if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") {
@@ -524,7 +572,7 @@ async function* streamAnthropic(
 }
 
 async function* streamOllama(
-  messages: any[],
+  messages: LLMMessage[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -532,7 +580,7 @@ async function* streamOllama(
 ): AsyncGenerator<StreamChunk> {
   const body: Record<string, unknown> = {
     model,
-    messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
     options: {
       temperature,
@@ -549,15 +597,14 @@ async function* streamOllama(
 
   if (!response.ok) {
     const errBody = await response.text();
-    const err: any = new Error(`Ollama API error ${response.status}: ${errBody}`);
-    err.status = response.status;
+    const err = Object.assign(new Error(`Ollama API error ${response.status}: ${errBody}`), { status: response.status });
     throw err;
   }
 
   for await (const line of streamLines(response.body)) {
     if (!line) continue;
     try {
-      const evt = JSON.parse(line) as any;
+      const evt = JSON.parse(line) as OllamaStreamEvent;
       if (evt.message?.content) {
         yield { content: evt.message.content, model };
       }
@@ -582,7 +629,7 @@ async function* streamOllama(
 // ─── Unified Multi-Model Fallback ─────────────────────────────────────────
 
 async function callOpenAIProvider(
-  openaiMessages: any[],
+  openaiMessages: ChatCompletionMessageParam[],
   model: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -640,16 +687,16 @@ async function callOpenAIProvider(
   }, 3, 1000);
 }
 
-const openaiBreaker = createProviderBreaker("openai", callOpenAIProvider);
-const anthropicBreaker = createProviderBreaker("anthropic", async (messages, model, temp, maxTokens, tools, signal) =>
-  retryWithBackoff(() => callAnthropic(messages, model, temp, maxTokens, tools, signal), 3, 1000)
+const openaiBreaker = createProviderBreaker("openai", callOpenAIProvider as (...args: unknown[]) => Promise<unknown>);
+const anthropicBreaker = createProviderBreaker("anthropic", async (...args: unknown[]) =>
+  retryWithBackoff(() => callAnthropic(args[0] as LLMMessage[], args[1] as string, args[2] as number, args[3] as number | undefined, args[4] as ToolDef[] | undefined, args[5] as AbortSignal | undefined), 3, 1000)
 );
-const ollamaBreaker = createProviderBreaker("ollama", async (messages, model, temp, maxTokens, tools, signal) =>
-  retryWithBackoff(() => callOllama(messages, model, temp, maxTokens, tools, signal), 2, 1000)
+const ollamaBreaker = createProviderBreaker("ollama", async (...args: unknown[]) =>
+  retryWithBackoff(() => callOllama(args[0] as LLMMessage[], args[1] as string, args[2] as number, args[3] as number | undefined, args[4] as ToolDef[] | undefined, args[5] as AbortSignal | undefined), 2, 1000)
 );
 
 async function callLLMWithFallback(
-  openaiMessages: any[],
+  openaiMessages: ChatCompletionMessageParam[],
   preferredModel: string,
   temperature: number,
   maxTokens: number | undefined,
@@ -657,17 +704,18 @@ async function callLLMWithFallback(
   signal?: AbortSignal
 ): Promise<{ content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage }> {
   const models = [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)];
+  const llmMessages = openaiMessages as unknown as LLMMessage[];
 
   for (const model of models) {
     const provider = detectProvider(model);
 
     try {
       if (provider === "anthropic") {
-        return await anthropicBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
+        return await anthropicBreaker.fire(llmMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
       }
 
       if (provider === "ollama") {
-        return await ollamaBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
+        return await ollamaBreaker.fire(llmMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
       }
 
       // Default: OpenAI-compatible API
@@ -677,32 +725,34 @@ async function callLLMWithFallback(
       }
 
       return await openaiBreaker.fire(openaiMessages, model, temperature, maxTokens, toolDefinitions, signal) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
-    } catch (err: any) {
-      const status = err.status || err.statusCode || 0;
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      const errRecord = err as Record<string, unknown>;
+      const status = (errRecord?.status ?? errRecord?.statusCode ?? 0) as number;
 
-      if (err.name === "CircuitBreakerOpenError" || err.name === "BulkheadOverloadError") {
-        logger.warn({ model, provider, err: err.message }, "Circuit breaker open, trying fallback model");
+      if (errRecord?.name === "CircuitBreakerOpenError" || errRecord?.name === "BulkheadOverloadError") {
+        logger.warn({ model, provider, err: errObj.message }, "Circuit breaker open, trying fallback model");
         continue;
       }
 
       if (status === 400 || status === 422) {
-        throw new LLM400Error(`LLM bad request: ${err.message}`, { statusCode: status, model });
+        throw new LLM400Error(`LLM bad request: ${errObj.message}`, { statusCode: status, model });
       }
       if (status === 401 || status === 403) {
-        throw new LLMAuthError(`LLM auth failed: ${err.message}`, { model });
+        throw new LLMAuthError(`LLM auth failed: ${errObj.message}`, { model });
       }
       if (status === 429 || err instanceof LLMRateLimitError) {
-        logger.warn({ model, err: err.message }, "Rate limit retries exhausted, trying fallback model");
+        logger.warn({ model, err: errObj.message }, "Rate limit retries exhausted, trying fallback model");
         continue;
       }
 
       logger.warn({
         model,
         provider,
-        err: err.message,
+        err: errObj.message,
         status,
-        errorBody: err.error ? JSON.stringify(err.error).slice(0, 3000) : undefined,
-        stack: err.stack?.slice(0, 300),
+        errorBody: errRecord?.error ? JSON.stringify(errRecord.error).slice(0, 3000) : undefined,
+        stack: errObj.stack?.slice(0, 300),
       }, "Model call failed, trying fallback");
     }
   }
@@ -711,13 +761,14 @@ async function callLLMWithFallback(
 }
 
 async function* streamLLMWithFallback(
-  openaiMessages: any[],
+  openaiMessages: ChatCompletionMessageParam[],
   preferredModel: string,
   temperature: number,
   maxTokens: number | undefined,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
   const models = [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)];
+  const llmMessages = openaiMessages as unknown as LLMMessage[];
   let lastErr: Error | undefined;
 
   for (const model of models) {
@@ -725,14 +776,14 @@ async function* streamLLMWithFallback(
 
     try {
       if (provider === "anthropic") {
-        for await (const chunk of streamAnthropic(openaiMessages, model, temperature, maxTokens, signal)) {
+        for await (const chunk of streamAnthropic(llmMessages, model, temperature, maxTokens, signal)) {
           yield chunk;
         }
         return;
       }
 
       if (provider === "ollama") {
-        for await (const chunk of streamOllama(openaiMessages, model, temperature, maxTokens, signal)) {
+        for await (const chunk of streamOllama(llmMessages, model, temperature, maxTokens, signal)) {
           yield chunk;
         }
         return;
@@ -748,16 +799,17 @@ async function* streamLLMWithFallback(
         yield chunk;
       }
       return;
-    } catch (err: any) {
-      lastErr = err;
-      const status = err.status || err.statusCode || 0;
+    } catch (err: unknown) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      const errRecord = err as Record<string, unknown>;
+      const status = (errRecord?.status ?? errRecord?.statusCode ?? 0) as number;
       if (status === 400 || status === 422) {
-        throw new LLM400Error(`LLM bad request: ${err.message}`, { statusCode: status, model });
+        throw new LLM400Error(`LLM bad request: ${lastErr.message}`, { statusCode: status, model });
       }
       if (status === 401 || status === 403) {
-        throw new LLMAuthError(`LLM auth failed: ${err.message}`, { model });
+        throw new LLMAuthError(`LLM auth failed: ${lastErr.message}`, { model });
       }
-      logger.warn({ model, provider, err: err.message }, "Streaming provider failed, trying fallback model");
+      logger.warn({ model, provider, err: lastErr.message }, "Streaming provider failed, trying fallback model");
     }
   }
 
@@ -769,8 +821,15 @@ const server = new grpc.Server({
 });
 
 server.addService(llmService.service, {
-  Generate: async (call: any, callback: any) => {
-    const { agent_id, execution_id, model: preferredModel, messages, temperature, max_tokens, tool_definitions } = call.request;
+  Generate: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
+    const req = call.request;
+    const agent_id = req.agent_id as string;
+    const execution_id = req.execution_id as string;
+    const preferredModel = req.model as string;
+    const messages = (req.messages ?? []) as Array<Record<string, unknown>>;
+    const temperature = req.temperature as number | undefined;
+    const max_tokens = req.max_tokens as number | undefined;
+    const tool_definitions = req.tool_definitions as ToolDef[] | undefined;
     const startTime = Date.now();
 
     logger.info({ agent_id, execution_id, preferredModel }, "Processing LLM generation request...");
@@ -806,7 +865,7 @@ server.addService(llmService.service, {
       acquired = true;
 
       // Prompt injection scan — reject critical/high payloads before hitting upstream providers
-      const injectionScan = scanMessagesForInjection(messages || []);
+      const injectionScan = scanMessagesForInjection(messages);
       if (injectionScan.detected) {
         const worst = injectionScan.worst;
         const reject = worst.severity === "critical" || worst.severity === "high";
@@ -828,29 +887,28 @@ server.addService(llmService.service, {
       }
 
       // Map messages to OpenAI format, preserving tool_calls on assistant messages
-      const openaiMessages = (messages || []).map((m: any) => {
-        const base: any = {
-          role: m.role as "system" | "user" | "assistant" | "tool",
-          content: m.content,
-        };
+      const openaiMessages: ChatCompletionMessageParam[] = messages.map((m) => {
+        const role = (m.role as string) ?? "user";
+        const content = (m.content as string) ?? "";
+        const result: Record<string, unknown> = { role, content };
         if (m.tool_call_id) {
-          base.tool_call_id = m.tool_call_id;
+          result.tool_call_id = m.tool_call_id as string;
         }
         if (m.name) {
-          base.name = m.name;
+          result.name = m.name as string;
         }
         // Restore structured tool_calls on assistant messages
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          base.tool_calls = m.tool_calls.map((tc: any) => ({
-            id: tc.id,
+        if (m.tool_calls && (m.tool_calls as unknown[]).length > 0) {
+          result.tool_calls = (m.tool_calls as Array<Record<string, unknown>>).map((tc) => ({
+            id: tc.id as string,
             type: "function",
             function: {
-              name: tc.name,
+              name: tc.name as string,
               arguments: typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args || {}),
             },
           }));
         }
-        return base;
+        return result as unknown as ChatCompletionMessageParam;
       });
 
       const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10);
@@ -862,7 +920,7 @@ server.addService(llmService.service, {
         preferredModel || "gpt-4o",
         temperature ?? 0.7,
         max_tokens ?? undefined,
-        tool_definitions,
+        tool_definitions ?? undefined,
         abort.signal
       ) as { content: string | null; toolCalls: ToolCallResult[]; model: string; usage: CompletionUsage };
       clearTimeout(timer);
@@ -900,33 +958,41 @@ server.addService(llmService.service, {
         finish_reason: responseToolCalls.length > 0 ? "tool_calls" : "stop",
         timestamp: { seconds: Math.floor(Date.now() / 1000) },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      const errRecord = err as Record<string, unknown>;
       logger.error({
         agent_id,
         execution_id,
-        err: err.message,
-        status: err.status,
-        body: err.body ? JSON.stringify(err.body).slice(0, 2000) : undefined,
+        err: errObj.message,
+        status: errRecord?.status,
+        body: errRecord?.body ? JSON.stringify(errRecord.body).slice(0, 2000) : undefined,
       }, "LLM generation failed");
 
-      const code = err.grpcStatus
-        ? err.grpcStatus
-        : err.name === "AbortError"
+      const code = errRecord?.grpcStatus
+        ? errRecord.grpcStatus
+        : errObj.name === "AbortError"
           ? grpc.status.DEADLINE_EXCEEDED
           : grpc.status.INTERNAL;
 
       callback({
-        code,
-        message: err.grpcStatus ? err.message : "LLM generation failed",
-        details: err.scanResult ? JSON.stringify(err.scanResult) : undefined,
+        code: code as grpc.ServiceError["code"],
+        message: errRecord?.grpcStatus ? errObj.message : "LLM generation failed",
+        details: errRecord?.scanResult ? JSON.stringify(errRecord.scanResult) : undefined,
       });
     } finally {
       if (acquired) concurrency.release();
     }
   },
 
-  GenerateStream: async (call: any) => {
-    const { agent_id, execution_id, model: preferredModel, messages, temperature, max_tokens } = call.request;
+  GenerateStream: async (call: grpc.ServerWritableStream<Record<string, unknown>, Record<string, unknown>>) => {
+    const req = call.request;
+    const agent_id = req.agent_id as string;
+    const execution_id = req.execution_id as string;
+    const preferredModel = req.model as string;
+    const messages = (req.messages ?? []) as Array<Record<string, unknown>>;
+    const temperature = req.temperature as number | undefined;
+    const max_tokens = req.max_tokens as number | undefined;
     const startTime = Date.now();
 
     logger.info({ agent_id, execution_id, preferredModel }, "Processing streaming LLM request...");
@@ -964,7 +1030,7 @@ server.addService(llmService.service, {
       acquired = true;
 
       // Prompt injection scan — reject critical/high payloads before streaming to upstream
-      const injectionScan = scanMessagesForInjection(messages || []);
+      const injectionScan = scanMessagesForInjection(messages);
       if (injectionScan.detected) {
         const worst = injectionScan.worst;
         const reject = worst.severity === "critical" || worst.severity === "high";
@@ -988,28 +1054,27 @@ server.addService(llmService.service, {
       }
 
       // Map messages to OpenAI format, preserving tool_calls on assistant messages
-      const openaiMessages = (messages || []).map((m: any) => {
-        const base: any = {
-          role: m.role as "system" | "user" | "assistant" | "tool",
-          content: m.content,
-        };
+      const openaiMessages: ChatCompletionMessageParam[] = messages.map((m) => {
+        const role = (m.role as string) ?? "user";
+        const content = (m.content as string) ?? "";
+        const result: Record<string, unknown> = { role, content };
         if (m.tool_call_id) {
-          base.tool_call_id = m.tool_call_id;
+          result.tool_call_id = m.tool_call_id as string;
         }
         if (m.name) {
-          base.name = m.name;
+          result.name = m.name as string;
         }
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          base.tool_calls = m.tool_calls.map((tc: any) => ({
-            id: tc.id,
+        if (m.tool_calls && (m.tool_calls as unknown[]).length > 0) {
+          result.tool_calls = (m.tool_calls as Array<Record<string, unknown>>).map((tc) => ({
+            id: tc.id as string,
             type: "function",
             function: {
-              name: tc.name,
+              name: tc.name as string,
               arguments: typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args || {}),
             },
           }));
         }
-        return base;
+        return result as unknown as ChatCompletionMessageParam;
       });
 
       const timeoutMs = parseInt(process.env.LLM_TIMEOUT_MS || "30000", 10);
@@ -1060,22 +1125,24 @@ server.addService(llmService.service, {
           finish_reason: finishReason,
         });
         call.end();
-      } catch (err: any) {
+      } catch (err: unknown) {
         clearTimeout(timer);
+        const errObj = err instanceof Error ? err : new Error(String(err));
         logger.error({
           agent_id,
           execution_id,
-          err: err.message,
-          status: err.status,
+          err: errObj.message,
+          status: (err as Record<string, unknown>)?.status,
         }, "LLM streaming failed");
 
         call.emit("error", {
-          code: err.name === "AbortError" ? grpc.status.DEADLINE_EXCEEDED : grpc.status.INTERNAL,
+          code: errObj.name === "AbortError" ? grpc.status.DEADLINE_EXCEEDED : grpc.status.INTERNAL,
           message: "LLM streaming failed",
         });
       }
-    } catch (err: any) {
-      logger.error({ agent_id, execution_id, err: err.message }, "LLM streaming setup failed");
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : new Error(String(err));
+      logger.error({ agent_id, execution_id, err: errObj.message }, "LLM streaming setup failed");
       call.emit("error", {
         code: grpc.status.INTERNAL,
         message: "LLM streaming failed",
@@ -1087,7 +1154,7 @@ server.addService(llmService.service, {
 });
 
 server.addService(HEALTH_SERVICE, {
-  check: (_call: any, callback: any) => {
+  check: (_call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     const healthy = overallCircuitState() !== "open" && (!!openai || !!ANTHROPIC_API_KEY || true); // Ollama is always available
     callback(null, { status: healthy ? "SERVING" : "NOT_SERVING" });
   }

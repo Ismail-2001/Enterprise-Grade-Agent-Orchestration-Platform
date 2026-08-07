@@ -60,6 +60,7 @@ const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   includeDirs: [path.resolve(__dirname, "../../../api/proto")]
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped structure
 const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 const secretService = egaopProto.egaop.v1.SecretService;
 
@@ -68,6 +69,7 @@ const server = new grpc.Server({
 });
 
 server.addService(secretService.service, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
   CreateSecret: async (call: any, callback: any) => {
     const { name, namespace, data, type } = call.request;
     const key = `${namespace}/${name}`;
@@ -102,12 +104,14 @@ server.addService(secretService.service, {
           rotation: { enabled: true, interval: "24h", strategy: "aes-256-gcm" }
         }
       });
-    } catch (err: any) {
-      logger.error({ key, err: err.message }, "Failed to persist secret");
-      callback({ code: grpc.status.INTERNAL, message: `Encryption or persistence failed: ${err.message}` });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ key, err: message }, "Failed to persist secret");
+      callback({ code: grpc.status.INTERNAL, message: `Encryption or persistence failed: ${message}` });
     }
   },
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
   GetSecret: async (call: any, callback: any) => {
     const { name, namespace, agent_id } = call.request;
     const key = `${namespace}/${name}`;
@@ -170,14 +174,16 @@ server.addService(secretService.service, {
         metadata: { name, namespace },
         spec: { type: row.type, data: decryptedData }
       });
-    } catch (err: any) {
-      logger.error({ key, err: err.message }, "Failed to retrieve or decrypt secret");
-      callback({ code: grpc.status.INTERNAL, message: `Retrieval or decryption failed: ${err.message}` });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ key, err: message }, "Failed to retrieve or decrypt secret");
+      callback({ code: grpc.status.INTERNAL, message: `Retrieval or decryption failed: ${message}` });
     }
   }
 });
 
 server.addService(HEALTH_SERVICE, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto handler
   check: async (_call: any, callback: any) => {
     const dbOk = await repo.ping();
     callback(null, { status: dbOk ? "SERVING" : "NOT_SERVING" });

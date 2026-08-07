@@ -356,6 +356,7 @@ export async function reactWorkflow(
             role: m.role,
             content: m.content,
             toolCallId: m.toolCallId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Message type may carry toolCalls from assistant responses
             toolCalls: (m as any).toolCalls,
           })),
           model: input.model,

@@ -82,7 +82,7 @@ export class DockerSandboxDriver implements SandboxDriver {
     const NanoCpus = spec.cpu ? Math.round(parseFloat(spec.cpu) * 1_000_000_000) : 500_000_000;
     const memoryBytes = spec.memory ? parseInt(spec.memory) * 1024 * 1024 : 512 * 1024 * 1024;
 
-    const HostConfig: any = {
+    const HostConfig: Docker.ContainerCreateOptions["HostConfig"] & { Runtime?: string; SecurityOpt?: string[] } = {
       Memory: memoryBytes,
       NanoCpus,
       NetworkMode: "egaop-sandbox",
@@ -155,13 +155,14 @@ export class DockerSandboxDriver implements SandboxDriver {
             stream.on("end", () => resolve(data));
           });
           initOutputs.push(output);
-        } catch (e: any) {
-          initOutputs.push(`ERROR: ${e.message}`);
+        } catch (e: unknown) {
+          const eObj = e instanceof Error ? e : new Error(String(e));
+          initOutputs.push(`ERROR: ${eObj.message}`);
         }
       }
 
       return { sandboxId: container.id, status: "Running", ipAddress, initOutputs };
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (container) {
         try { await container.remove({ force: true }); } catch { /* non-fatal */ }
       }
@@ -210,8 +211,9 @@ export class DockerSandboxDriver implements SandboxDriver {
         memory: 0,
         startedAt: state.StartedAt ? new Date(state.StartedAt) : null,
       };
-    } catch (e: any) {
-      if (e?.statusCode === 404) return { status: "NotFound", cpu: 0, memory: 0, startedAt: null };
+    } catch (e: unknown) {
+      const statusCode = (e as Record<string, unknown>)?.statusCode;
+      if (statusCode === 404) return { status: "NotFound", cpu: 0, memory: 0, startedAt: null };
       return { status: "Unknown", cpu: 0, memory: 0, startedAt: null };
     }
   }

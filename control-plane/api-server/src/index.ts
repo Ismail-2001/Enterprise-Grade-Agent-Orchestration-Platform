@@ -68,7 +68,9 @@ const namespacePackageDef = protoLoader.loadSync(
   { keepCase: true, longs: String, enums: String, defaults: true, oneofs: true, includeDirs: [PROTO_DIR] }
 );
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped structure
 const egaopProto = grpc.loadPackageDefinition(agentPackageDef) as any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic proto loading returns untyped structure
 const nsProto = grpc.loadPackageDefinition(namespacePackageDef) as any;
 
 const agentService = egaopProto.egaop.v1.AgentService;
@@ -96,6 +98,7 @@ server.addService(namespaceService.service, {
 });
 
 server.addService(HEALTH_SERVICE, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto service
   check: (_call: any, callback: any) => {
     callback(null, { status: "SERVING" });
   }
@@ -129,6 +132,7 @@ fastify.register(rateLimit, {
   max: Number(process.env.RATE_LIMIT_MAX) || 100,
   timeWindow: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
   keyGenerator: (request) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify request augmentation
     const userId = (request as any).userId || (request as any).user?.id;
     if (userId) return `user:${userId}`;
     const ip = request.ip ?? request.socket.remoteAddress ?? "unknown";
@@ -388,8 +392,11 @@ fastify.get("/api/agents", async (request) => {
 
   return new Promise((resolve) => {
     agentHandlers.ListAgents(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       { request: { namespace: q.namespace ?? "", filters, pagination: { page_size: limit } } } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (_err: any, response: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto response
         const agents = (response?.agents ?? []).map((a: any) => ({
           id: a.metadata?.uid ?? "",
           name: a.metadata?.name ?? "",
@@ -417,7 +424,9 @@ fastify.get("/api/agents/:id", async (request, reply) => {
 
   return new Promise((resolve) => {
     agentHandlers.GetAgent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       { request: { name: id, namespace } } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (err: any, response: any) => {
         if (err) {
           reply.code(404);
@@ -496,7 +505,7 @@ fastify.get("/api/agents/:id/executions", async (request) => {
         durationMs,
         costUsd: 0, // Cost tracked in observability plane
         traceId: workflow.workflowId,
-        runId: (workflow as any).runtimeStatus ?? undefined,
+        runId: (workflow as Record<string, unknown>).runtimeStatus ?? undefined,
       });
     }
 
@@ -521,7 +530,9 @@ fastify.post("/api/agents/:id/run", async (request, reply) => {
 
   await new Promise<void>((resolve) => {
     agentHandlers.GetAgent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       { request: { name: id, namespace: body?.namespace ?? "default" } } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (err: any, response: any) => {
         if (!err && response) {
           agentFound = true;
@@ -622,6 +633,7 @@ fastify.get("/api/executions/:id/history", async (request, reply) => {
     const history = await handle.fetchHistory();
     const events = history.events ?? [];
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Temporal history events have dynamic event-specific attributes
     const formattedEvents = events.map((event: any) => {
       const eventId = event.eventId != null ? String(event.eventId) : "0";
       const eventTime = event.eventTime?.seconds
@@ -665,6 +677,7 @@ fastify.get("/api/executions/:id/history", async (request, reply) => {
 });
 
 fastify.post("/api/agents", async (request, reply) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify request body
   const body = request.body as any;
   return new Promise((resolve) => {
     agentHandlers.CreateAgent(
@@ -675,7 +688,9 @@ fastify.post("/api/agents", async (request, reply) => {
           api_version: "egaop.io/v1",
           kind: "Agent",
         },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (err: any, response: any) => {
         if (err) {
           reply.code(409);
@@ -703,7 +718,9 @@ fastify.delete("/api/agents/:id", async (request, reply) => {
   const { id } = request.params as { id: string };
   return new Promise((resolve) => {
     agentHandlers.DeleteAgent(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       { request: { name: id, namespace: "default" } } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (err: any) => {
         if (err) { reply.code(404); resolve({ error: { message: err.message } }); return; }
         resolve(apiResponse(null));
@@ -724,6 +741,7 @@ fastify.get("/api/agents/:id/versions", async (request) => {
     const repo = await import("./agents/repository.js").then((m) => m.getAgentRepository());
     await repo.ensureVersionTable();
     const versions = await repo.getVersionHistory(namespace, id, limit);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- repository version record shape
     return apiResponse(versions.map((v: any) => ({
       id: v.id,
       agentId: v.agent_id,
@@ -832,8 +850,11 @@ fastify.get("/api/namespaces", async (request) => {
 
   return new Promise((resolve) => {
     namespaceHandlers.ListNamespaces(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto
       { request: { page_size: Math.min(Math.max(limit, 1), 100) } } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto callback
       (_err: any, response: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamically loaded proto response
         const ns = (response?.namespaces ?? []).map((n: any) => ({
           name: n.slug ?? "",
           displayName: n.display_name ?? n.slug ?? "",
@@ -870,7 +891,7 @@ fastify.get("/api/traces", async (request) => {
     };
 
     const iterable = client.workflow.list(listOpts);
-    const executions: any[] = [];
+    const executions: Array<Record<string, unknown>> = [];
     for await (const info of iterable) {
       const statusMap: Record<string, string> = {
         RUNNING: "running",
@@ -912,7 +933,7 @@ fastify.get("/api/traces/:traceId", async (request, reply) => {
     const client = await getTemporalClient();
     const iterable = client.workflow.list({ pageSize: 100 });
 
-    let found: any = null;
+    let found: import("@temporalio/client").WorkflowExecutionInfo | null = null;
     for await (const info of iterable) {
       if (info.workflowId === traceId || info.workflowId.endsWith(`-${traceId}`)) {
         found = info;
@@ -986,7 +1007,7 @@ fastify.get("/api/metrics", async () => {
           totalLatencyMs += info.closeTime.getTime() - info.startTime.getTime();
         }
         // Extract cost from workflow memo if available
-        const raw = (info as any).raw as Record<string, unknown> | undefined;
+        const raw = (info as Record<string, unknown>).raw as Record<string, unknown> | undefined;
         const memo = raw?.memo as Record<string, unknown> | undefined;
         if (memo?.totalCost) {
           const costStr = String(memo.totalCost).replace("$", "");
@@ -1068,6 +1089,7 @@ fastify.get("/api/events", async (request, reply) => {
 
 // WebSocket endpoint for real-time execution streaming
 // Connect to: ws://host:port/api/ws/executions/:executionId
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify WebSocket route option and handler
 fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async (socket: any, request: any) => {
   const { executionId } = request.params as { executionId: string };
 
@@ -1114,7 +1136,7 @@ fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async
 
         // If execution is terminal, send final event and clean up
         if (["COMPLETED", "FAILED", "CANCELLED", "TERMINATED", "TIMED_OUT"].includes(info.status.name)) {
-          const closeTime = (info as any).closeTime;
+          const closeTime = (info as Record<string, unknown>).closeTime as Date | undefined;
           broadcastToExecution(executionId, "execution_finished", {
             executionId,
             status: statusMap[info.status.name],
@@ -1150,6 +1172,7 @@ fastify.get("/api/ws/executions/:executionId", { websocket: true } as any, async
 // Global WebSocket endpoint for all events (broadcasts to all connected clients)
 const globalSubscribers = new Set<WebSocket>();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify WebSocket route option and handler
 fastify.get("/api/ws/events", { websocket: true } as any, async (socket: any) => {
   logger.info("WebSocket client connected to global event stream");
   globalSubscribers.add(socket);
@@ -1196,9 +1219,10 @@ if (process.env.NODE_ENV !== "test") {
         const client = await getTemporalClient();
         await client.workflow.getHandle("health-check-test").describe();
         temporalOk = true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Workflow not found is OK (Temporal is reachable)
-        if (err.message?.includes("not found") || err.message?.includes("NotFound")) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes("not found") || errMsg.includes("NotFound")) {
           temporalOk = true;
         }
       }

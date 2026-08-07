@@ -6,17 +6,32 @@ import {
   type Metadata,
   type Requester,
   type InterceptingListener,
+  type StatusObject,
   status as GrpcStatus,
 } from "@grpc/grpc-js";
-import type { ServerInterceptor, ServerMethodDefinition } from "@grpc/grpc-js";
-import { ServerInterceptingCall } from "@grpc/grpc-js";
+import type { ServerInterceptor, ServerMethodDefinition, ServerInterceptingCall } from "@grpc/grpc-js";
+import { ServerInterceptingCall as ServerInterceptingCallImpl } from "@grpc/grpc-js";
 import { verifyJWT } from "../crypto";
 
 interface InterceptingServerListener {
   onReceiveMetadata(metadata: Metadata, callback: (metadata: Metadata) => void): void;
-  onReceiveMessage(message: any, callback: (message: any) => void): void;
+  onReceiveMessage(message: unknown, callback: (message: unknown) => void): void;
   onReceiveHalfClose(callback: () => void): void;
   onCancel(): void;
+}
+
+interface ServerCallWrapper {
+  start: (callback: (listener: InterceptingServerListener) => void) => void;
+  sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => void;
+  sendMessage: (message: unknown, callback: (message: unknown) => void) => void;
+  sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => void;
+  startRead: () => void;
+  getPeer: () => string;
+  getDeadline: () => Date;
+  getHost: () => string;
+  getAuthContext: () => Record<string, string[]>;
+  getConnectionInfo: () => Record<string, unknown> | null;
+  getMetricsRecorder: () => unknown;
 }
 
 export interface NamespaceEnforcementConfig {
@@ -203,13 +218,13 @@ export function createNamespaceServerInterceptor(
   const platformAdminRole = config.platformAdminRole ?? "platform-admin";
 
   return (
-    methodDescriptor: ServerMethodDefinition<any, any>,
-    call: any
-  ): ServerInterceptingCall => {
+    methodDescriptor: ServerMethodDefinition<unknown, unknown>,
+    call: ServerInterceptingCall
+  ): ServerInterceptingCallImpl => {
     const methodPath = methodDescriptor.path ?? "unknown";
 
-    const wrappedCall: any = {
-      start: (callback: any) => {
+    const wrappedCall: ServerCallWrapper = {
+      start: (callback: (listener: InterceptingServerListener) => void) => {
         const wrappedListener: InterceptingServerListener = {
           onReceiveMetadata: (metadata: Metadata, passthrough: (m: Metadata) => void) => {
             const claimsRaw = (metadata.get("x-agent-claims")[0] as string) ?? "";
@@ -269,7 +284,7 @@ export function createNamespaceServerInterceptor(
 
             passthrough(metadata);
           },
-          onReceiveMessage: (message: any, passthrough: (m: any) => void) => {
+          onReceiveMessage: (message: unknown, passthrough: (m: unknown) => void) => {
             passthrough(message);
           },
           onReceiveHalfClose: (passthrough: () => void) => {
@@ -281,9 +296,9 @@ export function createNamespaceServerInterceptor(
         };
         callback(wrappedListener);
       },
-      sendMetadata: (metadata: any, callback: any) => callback(metadata),
-      sendMessage: (message: any, callback: any) => callback(message),
-      sendStatus: (status: any, callback: any) => callback(status),
+      sendMetadata: (metadata: Metadata, callback: (metadata: Metadata) => void) => callback(metadata),
+      sendMessage: (message: unknown, callback: (message: unknown) => void) => callback(message),
+      sendStatus: (status: StatusObject, callback: (status: StatusObject) => void) => callback(status),
       startRead: () => call.startRead(),
       getPeer: () => call.getPeer(),
       getDeadline: () => call.getDeadline(),
@@ -293,6 +308,6 @@ export function createNamespaceServerInterceptor(
       getMetricsRecorder: () => call.getMetricsRecorder(),
     };
 
-    return new ServerInterceptingCall(call as any, wrappedCall as any);
+    return new ServerInterceptingCallImpl(call as never, wrappedCall as never);
   };
 }
