@@ -77,15 +77,15 @@ server.addService(runtimeService.service, {
 
     try {
       const result = await sandboxDriver.createSandbox({
-        executionId: execution_id,
-        agentId: agent_id,
+        executionId: execution_id as string,
+        agentId: agent_id as string,
         namespace: process.env.POD_NAMESPACE || "egaop",
-        image: image || "egaop-base-runtime:latest",
-        isolationLevel: isolation_level,
-        cpu: resources?.cpu,
-        memory: resources?.memory,
-        envVars: env_vars || {},
-        initCommands: init_commands || [],
+        image: (image as string) || "egaop-base-runtime:latest",
+        isolationLevel: isolation_level as string | undefined,
+        cpu: (resources as { cpu?: string } | undefined)?.cpu,
+        memory: (resources as { memory?: string } | undefined)?.memory,
+        envVars: (env_vars as Record<string, string> | undefined) || {},
+        initCommands: (init_commands as string[] | undefined) || [],
       });
 
       try {
@@ -122,15 +122,15 @@ server.addService(runtimeService.service, {
     logger.info({ sandbox_id, reason }, "Terminating sandbox...");
 
     try {
-      const success = await sandboxDriver.terminateSandbox(sandbox_id);
+      const success = await sandboxDriver.terminateSandbox(sandbox_id as string);
 
       try {
         createAuditEntry(
           "sandbox.destroy",
           "info",
           { type: "service", id: "sandbox-runtime" },
-          { name: "TerminateSandbox", result: success ? "allowed" : "error", reason: reason || "unknown" },
-          { type: "sandbox", id: sandbox_id },
+          { name: "TerminateSandbox", result: success ? "allowed" : "error", reason: (reason as string) || "unknown" },
+          { type: "sandbox", id: sandbox_id as string },
         );
       } catch (e) {
         logger.warn({ err: e }, "Audit log write failed");
@@ -147,7 +147,7 @@ server.addService(runtimeService.service, {
   GetSandboxStatus: async (call: grpc.ServerUnaryCall<Record<string, unknown>, Record<string, unknown>>, callback: grpc.sendUnaryData<Record<string, unknown>>) => {
     const { sandbox_id } = call.request;
     try {
-      const status = await sandboxDriver.getSandboxStatus(sandbox_id);
+      const status = await sandboxDriver.getSandboxStatus(sandbox_id as string);
 
       try {
         createAuditEntry(
@@ -155,7 +155,7 @@ server.addService(runtimeService.service, {
           "info",
           { type: "service", id: "sandbox-runtime" },
           { name: "GetSandboxStatus", result: "allowed" },
-          { type: "sandbox", id: sandbox_id },
+          { type: "sandbox", id: sandbox_id as string },
         );
       } catch { /* audit failure is non-fatal */ }
 
