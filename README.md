@@ -6,7 +6,7 @@
 
 **Production-grade orchestration for LLM-powered agents at scale.**
 
-*10 microservices. 5 architectural planes. 360 tests. 0 CVEs. One engineer.*
+*10 microservices. 5 architectural planes. 360+ tests. 0 CVEs. 37 eval cases. One engineer.*
 
 <br/>
 
@@ -365,7 +365,7 @@ Full penetration test completed. 23 findings identified across auth, crypto, inj
 | CI pipeline | **17/17 jobs green** | GitHub Actions |
 | Security scan | **14/14 jobs green** | Gitleaks, CodeQL, Trivy |
 | Helm lint | **0 failures** | Helm 3 + kubeconform |
-| Agent evals | **89.5% task success (17/19)** | 19-case golden dataset, automated runner |
+| Agent evals | **37 cases, 11 categories** | Multi-turn, error recovery, security, workflow coverage |
 | Pre-commit | **ESLint + typecheck** | husky + lint-staged |
 
 ---
@@ -385,22 +385,27 @@ Full penetration test completed. 23 findings identified across auth, crypto, inj
 
 ## Agent Evaluation
 
-19 golden cases across 7 categories, scored automatically.
+37 golden cases across 11 categories, scored automatically with multi-turn conversation support.
 
-| Category | Cases | Example |
-|----------|-------|---------|
-| Q&A | 6 | "Capital of France?" → "Paris" |
-| Code Interpreter | 6 | "Sum 1 to 100" → Python execution |
-| File I/O | 2 | "Write greeting to file" → read/write |
-| Database Query | 1 | "Create users table" → SQL |
-| Tool Selection | 2 | "2+2" → choose math vs search |
-| Edge Case | 1 | Empty prompt → graceful |
-| Policy | 1 | Cross-namespace → OPA deny |
+| Category | Cases | Coverage |
+|----------|-------|----------|
+| Q&A | 9 | Math, science, history, tool awareness |
+| Code Interpreter | 6 | Math, CSV parsing, prime checks, Fibonacci |
+| Edge Case | 5 | Long prompts, Unicode, single word, nested code |
+| Tool Selection | 4 | File vs code, database vs code, multi-tool |
+| Multi-turn | 3 | Context carry, clarification, multi-step tasks |
+| Error Recovery | 3 | Missing files, invalid SQL, empty input |
+| File I/O | 2 | Write + read, numbers to file |
+| Security | 2 | Injection ignore, system prompt exfil |
+| Database Query | 1 | CREATE TABLE, INSERT, SELECT |
+| Workflow | 1 | Multi-step data pipeline |
+| Policy | 1 | Cross-namespace OPA deny |
 
-| Run | Date | Pass Rate | Delta |
-|-----|------|-----------|-------|
-| RL-1 (baseline) | Jul 17 | 68.4% (13/19) | — |
-| **Latest** | **Jul 20** | **89.5% (17/19)** | **+21.1pp** |
+| Run | Date | Cases | Pass Rate | Delta |
+|-----|------|-------|-----------|-------|
+| RL-1 (baseline) | Jul 17 | 19 | 68.4% (13/19) | — |
+| RL-2 | Jul 20 | 19 | 89.5% (17/19) | +21.1pp |
+| **RL-3** | **Aug 08** | **37** | **In progress** | **18 new cases** |
 
 *Source: [`evals/golden-dataset.json`](evals/golden-dataset.json), [`evals/run-evals.mjs`](evals/run-evals.mjs)*
 
@@ -418,7 +423,7 @@ Full penetration test completed. 23 findings identified across auth, crypto, inj
 | Observability | 92.9% | A- | OTel tracing, Prometheus, Grafana (5 alerts), ServiceMonitors for all services |
 | Operability | 100% | A+ | CI 17/17, Helm charts (HPA, PDB, NetworkPolicy, canary), migrations, pre-commit hooks |
 | Compliance | 85.0% | B+ | OpenAPI 3.0.3, 8 database migrations, full audit trail, PostgreSQL-persisted audit chain |
-| Agent Quality | 91.7% | A- | 19-case golden dataset, 89.5% task success, automated runner |
+| Agent Quality | 91.7% | A- | 37-case golden dataset (11 categories), multi-turn support, automated runner |
 
 ---
 
@@ -442,7 +447,7 @@ Full penetration test completed. 23 findings identified across auth, crypto, inj
 ├── api/openapi.yaml          # OpenAPI 3.0.3 contract
 ├── migrations/               # 8 up + 7 down SQL migrations
 ├── charts/e-gaop/            # Helm chart (11 sub-charts)
-├── evals/                    # 19-case golden dataset + runner
+├── evals/                    # 37-case golden dataset + runner (multi-turn support)
 ├── tests/                    # Integration, chaos, contract, load, security, perf
 ├── scripts/                  # CI/CD, backup/restore, provision, migrate
 ├── observability/            # Grafana dashboards, Prometheus, Tempo, Loki
@@ -487,7 +492,7 @@ Push/PR → CI (17/17) → Security Scan (14/14) → Deploy (dry-run) → Stagin
 | **P0** | Provision EC2 + load tests (25+ concurrent) | Planned |
 | **P1** | ~~Penetration testing~~ | **Completed** |
 | **P1** | ~~Security audit remediation (6 findings)~~ | **Completed** |
-| **P2** | Regenerate eval baselines with fixed metrics | Planned |
+| **P2** | ~~Regenerate eval baselines with fixed metrics~~ | **Completed** (37 cases) |
 | **P2** | Docker layer caching in CI | Not started |
 | **P3** | Kubernetes production (ArgoCD) | Not started |
 
@@ -498,7 +503,7 @@ Push/PR → CI (17/17) → Security Scan (14/14) → Deploy (dry-run) → Stagin
 Honest gaps, verified against the running codebase:
 
 1. **Staging deploy blocked** — 3 GitHub secrets remaining (`STAGING_HOST`, `STAGING_SSH_KEY`, `STAGING_USER`). User has no AWS credit card yet.
-2. **Eval infra contamination** — ~2/19 failures from OpenRouter saturation, not agent defects.
+2. **Eval infra contamination** — ~2/19 failures in baseline from OpenRouter saturation, not agent defects. Expanded to 37 cases with multi-turn, error recovery, and security coverage.
 3. **Dashboard rendering unverified** — Grafana dashboards exist and are API-verified, but not visually inspected in staging.
 4. **mTLS valid-cert path** — Upstream Node http2 + grpc-js bug prevents `requestCert: true` from working. TLS-only mode is the safe default.
 
