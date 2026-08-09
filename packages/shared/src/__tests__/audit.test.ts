@@ -1,11 +1,27 @@
 import { createAuditEntry, getAuditChain, verifyAuditChain } from "../audit/index.js";
+import { getPool } from "../db.js";
+
+jest.mock("../db.js", () => ({
+  getPool: jest.fn(),
+}));
+
+const mockGetPool = getPool as jest.Mock;
+
+let stderrSpy: jest.SpyInstance;
+let stdoutSpy: jest.SpyInstance;
 
 beforeEach(() => {
   process.env.AUDIT_CHAIN_ID = "test-chain";
+  stderrSpy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+  stdoutSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
 });
 
 afterEach(() => {
   delete process.env.AUDIT_CHAIN_ID;
+  process.env.NODE_ENV = "test";
+  stderrSpy.mockRestore();
+  stdoutSpy.mockRestore();
+  mockGetPool.mockReset();
 });
 
 describe("Audit Module", () => {
@@ -137,5 +153,67 @@ describe("Audit Module", () => {
 
     const chain = getAuditChain("test-chain");
     expect(chain.length).toBeGreaterThanOrEqual(eventTypes.length);
+  });
+
+  it("should write error/critical entries to stderr", () => {
+    createAuditEntry(
+      "policy.deny",
+      "critical",
+      { type: "service", id: "opa" },
+      { name: "Deny", result: "denied" },
+    );
+    expect(stderrSpy).toHaveBeenCalled();
+  });
+
+  it("should write info entries to stdout", () => {
+    createAuditEntry(
+      "auth.login",
+      "info",
+      { type: "user", id: "u" },
+      { name: "Login", result: "allowed" },
+    );
+    expect(stdoutSpy).toHaveBeenCalled();
+  });
+
+  it("should cap the in-memory chain at 10000 entries", () => {
+    const chainId = "cap-chain";
+    process.env.AUDIT_CHAIN_ID = chainId;
+    for (let i = 0; i < 10010; i++) {
+      createAuditEntry(
+        "agent.tool_call",
+        "info",
+        { type: "agent", id: `agent-${i}` },
+        { name: "ToolCall", result: "allowed" },
+      );
+    }
+    expect(getAuditChain(chainId).length).toBe(10000);
+  });
+
+  it("should persist entries to postgres outside of test env", async () => {
+    const pool = { query: jest.fn().mockResolvedValue({}) };
+    mockGetPool.mockResolvedValue(pool);
+    process.env.NODE_ENV = "production";
+    createAuditEntry(
+      "auth.login",
+      "info",
+      { type: "user", id: "u" },
+      { name: "Login", result: "allowed" },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(pool.query).toHaveBeenCalled();
+    expect(mockGetPool).toHaveBeenCalled();
+  });
+
+  it("should log a failure when persistence errors", async () => {
+    mockGetPool.mockRejectedValue(new Error("db down"));
+    process.env.NODE_ENV = "production";
+    createAuditEntry(
+      "secret.access",
+      "warn",
+      { type: "service", id: "vault" },
+      { name: "ReadSecret", result: "allowed" },
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("Failed to persist"));
   });
 });

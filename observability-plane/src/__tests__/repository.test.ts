@@ -460,5 +460,93 @@ describe("ObservabilityRepository", () => {
       const cost = await repo.getTraceCost("trace-1");
       expect(cost).toBe("$0.00");
     });
+
+    it("should extract cost within a namespace", async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [{ cost: "$1.00" }],
+        rowCount: 1,
+      });
+
+      const cost = await repo.getTraceCost("trace-1", "ns-1");
+      expect(cost).toBe("$1.00");
+    });
+
+    it("should return $0.00 when no cost found within a namespace", async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const cost = await repo.getTraceCost("trace-1", "ns-1");
+      expect(cost).toBe("$0.00");
+    });
+  });
+
+  describe("getReplaySession with namespace", () => {
+    it("should filter spans by namespace", async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      mockClient.query.mockResolvedValueOnce({ // get session
+        rows: [sessionRow()],
+        rowCount: 1,
+      });
+      mockClient.query.mockResolvedValueOnce({ // get spans scoped to namespace
+        rows: [spanRow({ span_id: "s1", namespace: "ns-1" })],
+        rowCount: 1,
+      });
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+      const retrieved = await repo.getReplaySession("session-id", "ns-1");
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.spans).toHaveLength(1);
+      expect(retrieved!.spans[0]!.spanId).toBe("s1");
+    });
+
+    it("should rollback and rethrow on query error", async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      mockClient.query.mockRejectedValueOnce(new Error("db down")); // session query fails
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+      await expect(repo.getReplaySession("session-id")).rejects.toThrow("db down");
+    });
+  });
+
+  describe("batchIngest error handling", () => {
+    it("should rollback and rethrow on insert error", async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      mockClient.query.mockRejectedValueOnce(new Error("insert failed")); // INSERT fails
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+      const span = {
+        traceId: "trace-1", spanId: "failing-1", parentSpanId: null,
+        serviceName: "test-service", operationName: "test-op",
+        namespace: "ns-1", startTime: new Date(), endTime: new Date(), status: "ok",
+        attributes: {}, events: [],
+      };
+
+      await expect(repo.batchIngest([span])).rejects.toThrow("insert failed");
+    });
+  });
+
+  describe("transaction", () => {
+    it("should commit when the work succeeds", async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      mockClient.query.mockResolvedValueOnce({ rows: [], rowCount: 1 }); // work
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+      const result = await repo.transaction(async (client) => {
+        await client.query("UPDATE spans SET status = $1", ["done"]);
+        return 42;
+      });
+
+      expect(result).toBe(42);
+    });
+
+    it("should rollback and rethrow when the work fails", async () => {
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      mockClient.query.mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+      await expect(
+        repo.transaction(async () => {
+          throw new Error("boom");
+        })
+      ).rejects.toThrow("boom");
+    });
   });
 });

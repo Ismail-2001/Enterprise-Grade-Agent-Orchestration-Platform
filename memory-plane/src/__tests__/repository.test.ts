@@ -177,6 +177,13 @@ describe("MemoryPlaneRepository", () => {
       expect(results[1]!.entry.key).toBe("vec-3");
     });
 
+    it("should default topK when not provided", async () => {
+      mockPool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+      const results = await repo.searchSimilar("ns-1", [1, 0]);
+      expect(results).toHaveLength(0);
+    });
+
     it("should only search within namespace", async () => {
       mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
       mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 1 });
@@ -286,6 +293,93 @@ describe("MemoryPlaneRepository", () => {
 
       const page2 = await repo.list("ns-1", "agent-1", 3, 3);
       expect(page2).toHaveLength(3);
+    });
+  });
+
+  describe("cleanup interval", () => {
+    let stderrSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      stderrSpy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      stderrSpy.mockRestore();
+      jest.useRealTimers();
+      repo.stopCleanupInterval();
+    });
+
+    it("should periodically clear expired memory", async () => {
+      mockPool.query.mockResolvedValue({ rows: [], rowCount: 3 });
+
+      repo.startCleanupInterval(1000);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM agent_memory"));
+    });
+
+    it("should use the default interval when none is provided", async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      repo.startCleanupInterval();
+      await jest.advanceTimersByTimeAsync(300000);
+
+      expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM agent_memory"));
+    });
+
+    it("should log an error when cleanup fails", async () => {
+      mockPool.query.mockRejectedValue(new Error("db down"));
+
+      repo.startCleanupInterval(1000);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      expect(stderrSpy).toHaveBeenCalled();
+      const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+      expect(output).toContain("Failed to clear expired memory");
+    });
+
+    it("should not error when stopping without an active timer", () => {
+      expect(() => repo.stopCleanupInterval()).not.toThrow();
+    });
+  });
+
+  describe("transaction", () => {
+    it("should commit and release the client on success", async () => {
+      const client = {
+        query: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      (pool.connect as jest.Mock).mockResolvedValue(client);
+
+      const result = await repo.transaction(async (c) => {
+        expect(c).toBe(client);
+        return "done";
+      });
+
+      expect(result).toBe("done");
+      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
+      expect(client.query).toHaveBeenNthCalledWith(2, "COMMIT");
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it("should roll back and rethrow when the operation fails", async () => {
+      const client = {
+        query: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+      (pool.connect as jest.Mock).mockResolvedValue(client);
+
+      const failure = new Error("boom");
+      await expect(
+        repo.transaction(async () => {
+          throw failure;
+        })
+      ).rejects.toBe(failure);
+
+      expect(client.query).toHaveBeenNthCalledWith(1, "BEGIN");
+      expect(client.query).toHaveBeenNthCalledWith(2, "ROLLBACK");
+      expect(client.release).toHaveBeenCalled();
     });
   });
 });

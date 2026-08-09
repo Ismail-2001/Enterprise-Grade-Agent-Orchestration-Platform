@@ -1,4 +1,7 @@
+import { Pool } from "pg";
 import { SecretRepository } from "../repository";
+
+const PoolMock = Pool as unknown as jest.Mock;
 
 const mockPool = {
   query: jest.fn(),
@@ -208,6 +211,68 @@ describe("SecretRepository — PostgreSQL persistence", () => {
       ).rejects.toThrow();
     } finally {
       await badRepo.close();
+    }
+  });
+
+  it("should report healthy when the database responds", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [{ "?column?": 1 }], rowCount: 1 });
+
+    await expect(repo.ping()).resolves.toBe(true);
+  });
+
+  it("should report unhealthy when the database query fails", async () => {
+    mockPool.query.mockRejectedValueOnce(new Error("connection refused"));
+
+    await expect(repo.ping()).resolves.toBe(false);
+  });
+
+  it("should return false when delete reports no rowCount", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+    const deleted = await repo.delete("default", "ghost-key");
+    expect(deleted).toBe(false);
+  });
+
+  it("should fall back to environment variables when no config is provided", () => {
+    new SecretRepository();
+
+    const lastConfig = PoolMock.mock.calls.at(-1)?.[0];
+    expect(lastConfig).toMatchObject({
+      host: "127.0.0.1",
+      port: 5432,
+      database: "testdb",
+      user: "testuser",
+      password: "testpass",
+    });
+  });
+
+  it("should use built-in defaults when no config and no environment variables are present", () => {
+    const savedEnv = {
+      host: process.env.POSTGRES_HOST,
+      port: process.env.POSTGRES_PORT,
+      db: process.env.POSTGRES_DB,
+      user: process.env.POSTGRES_USER,
+      password: process.env.POSTGRES_PASSWORD,
+    };
+    delete process.env.POSTGRES_HOST;
+    delete process.env.POSTGRES_PORT;
+    delete process.env.POSTGRES_DB;
+    delete process.env.POSTGRES_USER;
+    delete process.env.POSTGRES_PASSWORD;
+
+    try {
+      new SecretRepository();
+
+      const lastConfig = PoolMock.mock.calls.at(-1)?.[0];
+      expect(lastConfig).toMatchObject({
+        host: "postgres",
+        port: 5432,
+        database: "egaop",
+        user: "egaop",
+        password: "",
+      });
+    } finally {
+      Object.assign(process.env, savedEnv);
     }
   });
 });

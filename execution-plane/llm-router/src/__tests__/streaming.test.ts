@@ -57,6 +57,40 @@ describe("streamAnthropic", () => {
       }
     }).rejects.toThrow("ANTHROPIC_API_KEY not configured");
   });
+
+  it("throws on a non-ok upstream response", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: jest.fn().mockResolvedValue("boom"),
+    }) as unknown as typeof fetch;
+
+    await expect(async () => {
+      for await (const chunk of streamAnthropic([{ role: "user", content: "Hi" }], "claude-3-5-sonnet-20241022", 0.7, undefined)) {
+        expect(chunk).toBeDefined();
+      }
+    }).rejects.toThrow(/Anthropic API error/);
+  });
+
+  it("ignores malformed SSE frames", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    global.fetch = jest.fn().mockResolvedValue(
+      sseResponse([
+        'event: message_start',
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":2}}}',
+        'data: not-json',
+        'event: message_delta',
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+      ])
+    ) as unknown as typeof fetch;
+
+    let finalUsage: any;
+    for await (const chunk of streamAnthropic([{ role: "user", content: "Hi" }], "claude-3-5-sonnet-20241022", 0.7, undefined)) {
+      if (chunk.usage) finalUsage = chunk.usage;
+    }
+    expect(finalUsage).toEqual({ prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 });
+  });
 });
 
 describe("streamOllama", () => {
@@ -78,6 +112,20 @@ describe("streamOllama", () => {
 
     expect(chunks.join("")).toBe("Hello there");
     expect(finalUsage).toEqual({ prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 });
+  });
+
+  it("throws on a non-ok upstream response", async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: jest.fn().mockResolvedValue("boom"),
+    }) as unknown as typeof fetch;
+
+    await expect(async () => {
+      for await (const chunk of streamOllama([{ role: "user", content: "Hi" }], "llama3-8b-8192", 0.7, undefined)) {
+        expect(chunk).toBeDefined();
+      }
+    }).rejects.toThrow(/Ollama API error/);
   });
 });
 
@@ -101,6 +149,33 @@ describe("streamLLMWithFallback", () => {
     }
 
     expect(chunks.join("")).toBe("fallback");
+  });
+
+  it("streams from the preferred model (Anthropic path)", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    global.fetch = jest.fn().mockResolvedValue(
+      sseResponse([
+        'event: message_start',
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":3}}}',
+        'event: content_block_delta',
+        'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"claude"}}',
+        'event: message_delta',
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
+      ])
+    ) as unknown as typeof fetch;
+
+    const chunks: string[] = [];
+    for await (const chunk of streamLLMWithFallback(
+      [{ role: "user", content: "Hi" }],
+      "claude-3-5-sonnet-20241022",
+      0.7,
+      undefined,
+      undefined
+    )) {
+      if (chunk.content) chunks.push(chunk.content);
+    }
+
+    expect(chunks.join("")).toBe("claude");
   });
 
   it("throws when all models in the fallback chain fail", async () => {

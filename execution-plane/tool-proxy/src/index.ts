@@ -407,4 +407,15 @@ if (process.env.NODE_ENV !== "test") {
   process.on("SIGINT", shutdown);
 }
 
-export { server, scanForPII, RateLimiter, isPrivateIP as isPrivateOrInternalIP };
+export {
+  server,
+  scanForPII,
+  detectedPIIPatterns,
+  isPrivateIP as isPrivateOrInternalIP,
+  isBlockedURL,
+  isAllowedWebFetchHost,
+  validateSandboxArgs,
+  injectCredentials,
+  fetchWithRetry,
+  RateLimiter,
+};

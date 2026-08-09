@@ -1,4 +1,4 @@
-import { PRICING, countTokens, calculateCost } from "../index";
+import { PRICING, countTokens, calculateCost, detectProvider } from "../index";
 
 describe("LLM Router", () => {
   describe("countTokens", () => {
@@ -45,6 +45,12 @@ describe("LLM Router", () => {
       const expensiveNum = parseFloat(expensiveCost.replace("$", ""));
       expect(cheapNum).toBeLessThan(expensiveNum);
     });
+
+    it("should treat non-finite token counts as zero", () => {
+      expect(calculateCost(Infinity, 0, "gpt-4o")).toBe("$0.000000");
+      expect(calculateCost(-5, NaN, "gpt-4o")).toBe("$0.000000");
+      expect(calculateCost(1000, 500, "llama3-8b-8192")).toBe("$0.000000");
+    });
   });
 
   describe("PRICING", () => {
@@ -59,6 +65,27 @@ describe("LLM Router", () => {
         expect(pricing.input).toBeGreaterThanOrEqual(0);
         expect(pricing.output).toBeGreaterThanOrEqual(0);
       }
+    });
+  });
+
+  describe("detectProvider", () => {
+    it("detects anthropic models", () => {
+      expect(detectProvider("claude-3-5-sonnet-20241022")).toBe("anthropic");
+      expect(detectProvider("claude-3-opus-20240229")).toBe("anthropic");
+    });
+
+    it("detects ollama models", () => {
+      expect(detectProvider("llama3-8b-8192")).toBe("ollama");
+      expect(detectProvider("mixtral-8x7b-32768")).toBe("ollama");
+      expect(detectProvider("mistral-7b")).toBe("ollama");
+      expect(detectProvider("codellama")).toBe("ollama");
+      expect(detectProvider("phi-3")).toBe("ollama");
+      expect(detectProvider("deepseek-coder")).toBe("ollama");
+    });
+
+    it("defaults unknown models to openai", () => {
+      expect(detectProvider("gpt-4o")).toBe("openai");
+      expect(detectProvider("something-else")).toBe("openai");
     });
   });
 });

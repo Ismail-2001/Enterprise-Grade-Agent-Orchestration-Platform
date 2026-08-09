@@ -875,3 +875,183 @@ describe("Cross-namespace read attempt → logged as SECURITY_EVENT", () => {
     expect(err.message).toContain("Cross-namespace operation denied");
   });
 });
+
+describe("Handler error paths", () => {
+  const defaultNamespace = (overrides?: Record<string, unknown>) => ({
+    id: "ns-x",
+    slug: "x",
+    displayName: "X",
+    tier: "standard",
+    ownerId: "o",
+    quotas: { maxAgents: 5, maxConcurrentExecutions: 2, maxMemoryMB: 512, maxToolCallsPerMinute: 30 },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRepo.create.mockImplementation((params) => Promise.resolve({
+      id: `ns-${params.slug}`, slug: params.slug, displayName: params.displayName,
+      tier: params.tier, ownerId: params.ownerId, quotas: params.quotas,
+      createdAt: new Date(), updatedAt: new Date(),
+    }));
+    mockRepo.findBySlug.mockResolvedValue(defaultNamespace());
+    mockRepo.list.mockResolvedValue({ namespaces: [], nextPageToken: "", totalCount: 0 });
+    mockRepo.update.mockResolvedValue(defaultNamespace());
+    mockRepo.suspend.mockResolvedValue(defaultNamespace({ suspendedAt: new Date() }));
+    mockRepo.softDelete.mockResolvedValue(defaultNamespace({ deletedAt: new Date() }));
+  });
+
+  it("CreateNamespace rejects an invalid slug", async () => {
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.CreateNamespace(
+      createMockCall({ slug: "AB!", tier: "NAMESPACE_TIER_SANDBOX" }),
+      callback
+    );
+    expect(result.err).toBeDefined();
+    expect(result.err!.message).toContain("Invalid namespace slug");
+  });
+
+  it("CreateNamespace maps a duplicate key to already-exists error", async () => {
+    mockRepo.create.mockRejectedValueOnce(Object.assign(new Error("duplicate key"), { code: "23505" }));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.CreateNamespace(
+      createMockCall({ slug: "dup-ns", tier: "NAMESPACE_TIER_SANDBOX" }),
+      callback
+    );
+    expect(result.err!.message).toContain("already exists");
+  });
+
+  it("CreateNamespace surfaces generic create failures", async () => {
+    mockRepo.create.mockRejectedValueOnce(new Error("db down"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.CreateNamespace(
+      createMockCall({ slug: "fail-ns", tier: "NAMESPACE_TIER_SANDBOX" }),
+      callback
+    );
+    expect(result.err!.message).toContain("Failed to create namespace");
+  });
+
+  it("GetNamespace surfaces repository failures", async () => {
+    mockRepo.findBySlug.mockRejectedValueOnce(new Error("boom"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.GetNamespace(createMockCall({ slug: "x" }), callback);
+    expect(result.err!.message).toContain("Failed to get namespace");
+  });
+
+  it("ListNamespaces surfaces repository failures", async () => {
+    mockRepo.list.mockRejectedValueOnce(new Error("boom"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.ListNamespaces(createMockCall({}), callback);
+    expect(result.err!.message).toContain("Failed to list namespaces");
+  });
+
+  it("UpdateNamespace returns not found for a missing namespace", async () => {
+    mockRepo.update.mockResolvedValueOnce(null);
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.UpdateNamespace(createMockCall({ slug: "missing" }), callback);
+    expect(result.err!.message).toContain("not found");
+  });
+
+  it("UpdateNamespace surfaces repository failures", async () => {
+    mockRepo.update.mockRejectedValueOnce(new Error("boom"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.UpdateNamespace(createMockCall({ slug: "x" }), callback);
+    expect(result.err!.message).toContain("Failed to update namespace");
+  });
+
+  it("SuspendNamespace returns not found for a missing namespace", async () => {
+    mockRepo.suspend.mockResolvedValueOnce(null);
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.SuspendNamespace(createMockCall({ slug: "missing" }), callback);
+    expect(result.err!.message).toContain("not found");
+  });
+
+  it("SuspendNamespace surfaces repository failures", async () => {
+    mockRepo.suspend.mockRejectedValueOnce(new Error("boom"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.SuspendNamespace(createMockCall({ slug: "x" }), callback);
+    expect(result.err!.message).toContain("Failed to suspend namespace");
+  });
+
+  it("DeleteNamespace returns not found for a missing namespace", async () => {
+    mockRepo.softDelete.mockResolvedValueOnce(null);
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.DeleteNamespace(createMockCall({ slug: "missing" }), callback);
+    expect(result.err!.message).toContain("not found");
+  });
+
+  it("DeleteNamespace surfaces repository failures", async () => {
+    mockRepo.softDelete.mockRejectedValueOnce(new Error("boom"));
+    const { callback, result } = createMockCallback();
+    await namespaceHandlers.DeleteNamespace(createMockCall({ slug: "x" }), callback);
+    expect(result.err!.message).toContain("Failed to delete namespace");
+  });
+
+  it("CreateAgent returns an error when the agent already exists", async () => {
+    await callAgentHandler(agentHandlers.CreateAgent, {
+      metadata: { name: "dup-handler", namespace: "dup-handler-ns" },
+      spec: {},
+    });
+    await expect(
+      callAgentHandler(agentHandlers.CreateAgent, {
+        metadata: { name: "dup-handler", namespace: "dup-handler-ns" },
+        spec: {},
+      })
+    ).rejects.toThrow("already exists");
+  });
+
+  it("CreateAgent surfaces internal errors", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      callAgentHandler(agentHandlers.CreateAgent, {
+        metadata: { name: "err-agent", namespace: "err-ns" },
+        spec: {},
+      })
+    ).rejects.toThrow("Internal error creating agent");
+  });
+
+  it("GetAgent surfaces internal errors", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      callAgentHandler(agentHandlers.GetAgent, { name: "x", namespace: "y" })
+    ).rejects.toThrow("Internal error getting agent");
+  });
+
+  it("ListAgents surfaces internal errors", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      callAgentHandler(agentHandlers.ListAgents, { namespace: "y", filters: {}, pagination: {} })
+    ).rejects.toThrow("Internal error listing agents");
+  });
+
+  it("UpdateAgent surfaces internal errors", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      callAgentHandler(agentHandlers.UpdateAgent, { namespace: "y", name: "x", spec: {} })
+    ).rejects.toThrow("Internal error updating agent");
+  });
+
+  it("DeleteAgent surfaces internal errors", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      callAgentHandler(agentHandlers.DeleteAgent, { namespace: "y", name: "x" })
+    ).rejects.toThrow("Internal error deleting agent");
+  });
+});

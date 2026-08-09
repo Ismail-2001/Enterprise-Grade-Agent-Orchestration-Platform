@@ -5,7 +5,7 @@ import * as protoLoader from "@grpc/proto-loader";
 import { createNamespaceServerInterceptor, encrypt, decrypt, extractNamespace, type EncryptedPayload } from "@e-gaop/shared";
 import { SecretRepository } from "./repository";
 
-const HEALTH_SERVICE: grpc.ServiceDefinition = {
+export const HEALTH_SERVICE: grpc.ServiceDefinition = {
   check: {
     path: "/grpc.health.v1.Health/Check",
     requestStream: false,

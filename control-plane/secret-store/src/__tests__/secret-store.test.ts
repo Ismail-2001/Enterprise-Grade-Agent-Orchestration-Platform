@@ -3,11 +3,12 @@ jest.mock("pg", () => {
   return { Pool: jest.fn(() => mPool) };
 });
 
+import http from "http";
 import path from "path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { SecretRepository } from "../repository";
-import { createServerBundle, destroyServerBundle, type ServerBundle } from "../test-server";
+import { createServerBundle, destroyServerBundle, HEALTH_SERVICE, type ServerBundle } from "../test-server";
 
 const MASTER_KEY = "test-master-key-for-unit-tests-only-32chars";
 
@@ -21,11 +22,12 @@ const egaopProto = grpc.loadPackageDefinition(packageDefinition) as any;
 let repo: SecretRepository | null = null;
 let bundle: ServerBundle | null = null;
 const secrets = new Map<string, any>();
+let mockPool!: { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
 
 beforeAll(async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Pool } = require("pg");
-  const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+  mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
   mockPool.query.mockImplementation(async (sql: string, params: any[]) => {
     // INSERT INTO secrets ... ON CONFLICT ... DO UPDATE
     if (sql.trimStart().startsWith("INSERT INTO secrets")) {
@@ -74,19 +76,26 @@ function createSecretClient(port: number) {
 }
 
 function createHealthClient(port: number) {
-  const client = new grpc.Client(`localhost:${port}`, grpc.credentials.createInsecure());
+  const HealthClient = grpc.makeGenericClientConstructor(HEALTH_SERVICE, "Health") as any;
+  const client = new HealthClient(`localhost:${port}`, grpc.credentials.createInsecure());
   return {
-    Check: (req: any, callback: any) => {
-      client.makeUnaryRequest(
-        "/grpc.health.v1.Health/Check",
-        (v: any) => Buffer.from(JSON.stringify(v)),
-        (b: Buffer) => JSON.parse(b.toString()),
-        req,
-        callback
-      );
-    },
+    Check: (req: any, callback: any) => client.check(req, callback),
     close: () => client.close()
   };
+}
+
+function httpGet(url: string): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    http
+      .get(url, (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body }));
+      })
+      .on("error", reject);
+  });
 }
 
 describe("Secret Store — gRPC integration", () => {
@@ -139,6 +148,53 @@ describe("Secret Store — gRPC integration", () => {
         done();
       });
     });
+
+    it("should default to api_key type when type is omitted", (done) => {
+      if (!bundle) return done();
+      client.CreateSecret({
+        name: "no-type-secret",
+        namespace: "default",
+        data: { token: "abc123" }
+      }, async (err: any, _response: any) => {
+        expect(err).toBeNull();
+        const stored = await bundle!.repo.get("default", "no-type-secret");
+        expect(stored).not.toBeNull();
+        expect(stored!.type).toBe("api_key");
+        done();
+      });
+    });
+
+    it("should surface an INTERNAL error when persistence fails", (done) => {
+      if (!bundle) return done();
+      mockPool.query.mockRejectedValueOnce(new Error("db exploded"));
+      client.CreateSecret({
+        name: "fail-secret",
+        namespace: "default",
+        data: { key: "v" },
+        type: "api_key"
+      }, (err: any) => {
+        expect(err).toBeDefined();
+        expect(err.code).toBe(grpc.status.INTERNAL);
+        expect(err.message).toContain("db exploded");
+        done();
+      });
+    });
+
+    it("should handle non-Error persistence failures", (done) => {
+      if (!bundle) return done();
+      mockPool.query.mockRejectedValueOnce("plain string failure");
+      client.CreateSecret({
+        name: "fail-secret-2",
+        namespace: "default",
+        data: { key: "v" },
+        type: "api_key"
+      }, (err: any) => {
+        expect(err).toBeDefined();
+        expect(err.code).toBe(grpc.status.INTERNAL);
+        expect(err.message).toContain("plain string failure");
+        done();
+      });
+    });
   });
 
   describe("GetSecret", () => {
@@ -184,6 +240,42 @@ describe("Secret Store — gRPC integration", () => {
         done();
       });
     });
+
+    it("should surface an INTERNAL error when retrieval fails", (done) => {
+      if (!bundle) return done();
+      client.CreateSecret({
+        name: "retrieve-fail",
+        namespace: "default",
+        data: { k: "v" },
+        type: "api_key"
+      }, () => {
+        mockPool.query.mockRejectedValueOnce(new Error("read failed"));
+        client.GetSecret({ name: "retrieve-fail", namespace: "default", agent_id: "default/agent-1" }, (err: any) => {
+          expect(err).toBeDefined();
+          expect(err.code).toBe(grpc.status.INTERNAL);
+          expect(err.message).toContain("read failed");
+          done();
+        });
+      });
+    });
+
+    it("should handle non-Error retrieval failures", (done) => {
+      if (!bundle) return done();
+      client.CreateSecret({
+        name: "retrieve-fail-2",
+        namespace: "default",
+        data: { k: "v" },
+        type: "api_key"
+      }, () => {
+        mockPool.query.mockRejectedValueOnce("read exploded");
+        client.GetSecret({ name: "retrieve-fail-2", namespace: "default", agent_id: "default/agent-1" }, (err: any) => {
+          expect(err).toBeDefined();
+          expect(err.code).toBe(grpc.status.INTERNAL);
+          expect(err.message).toContain("read exploded");
+          done();
+        });
+      });
+    });
   });
 
   describe("Health Check", () => {
@@ -193,6 +285,46 @@ describe("Secret Store — gRPC integration", () => {
         expect(response.status).toBe("SERVING");
         done();
       });
+    });
+  });
+
+  describe("HTTP health endpoint", () => {
+    it("should return SERVING for /healthz", async () => {
+      if (!bundle) return;
+      const res = await httpGet(`http://127.0.0.1:${bundle.healthPort}/healthz`);
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).status).toBe("SERVING");
+    });
+
+    it("should return SERVING for /readyz", async () => {
+      if (!bundle) return;
+      const res = await httpGet(`http://127.0.0.1:${bundle.healthPort}/readyz`);
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).status).toBe("SERVING");
+    });
+
+    it("should return 404 for unknown paths", async () => {
+      if (!bundle) return;
+      const res = await httpGet(`http://127.0.0.1:${bundle.healthPort}/unknown`);
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe("server bootstrap failures", () => {
+    it("should reject when the gRPC server fails to bind", async () => {
+      if (!bundle) return;
+      const bindSpy = jest
+        .spyOn(grpc.Server.prototype, "bindAsync")
+        .mockImplementationOnce((_addr: string, _creds: any, callback: (err: Error | null, port: number) => void) => {
+          callback(new Error("port in use"), 0);
+        });
+      try {
+        await expect(
+          createServerBundle({ masterKey: MASTER_KEY, repo: bundle.repo })
+        ).rejects.toThrow("port in use");
+      } finally {
+        bindSpy.mockRestore();
+      }
     });
   });
 });

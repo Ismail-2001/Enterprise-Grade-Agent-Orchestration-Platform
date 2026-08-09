@@ -18,9 +18,10 @@ function isCommandSafe(cmd: string): boolean {
 type K8sModule = typeof import("@kubernetes/client-node");
 
 let _k8sCache: K8sModule | null = null;
-async function getK8s(): Promise<K8sModule> {
+function getK8s(): K8sModule {
   if (!_k8sCache) {
-    _k8sCache = await import("@kubernetes/client-node");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    _k8sCache = require("@kubernetes/client-node") as K8sModule;
   }
   return _k8sCache;
 }
@@ -67,7 +68,7 @@ export class K8sSandboxRuntime {
 
   private async ensureInit(): Promise<void> {
     if (this.k8sApi) return;
-    const k8s = await getK8s();
+    const k8s = getK8s();
     if (!this.kc) {
       this.kc = new k8s.KubeConfig() as unknown as K8sKubeConfig;
       this.kc.loadFromDefault();
@@ -184,7 +185,7 @@ export class K8sSandboxRuntime {
   }
 
   private async execInPod(podName: string, command: string[]): Promise<string> {
-    const k8s = await getK8s();
+    const k8s = getK8s();
     const exec = new k8s.Exec(this.kc as unknown as InstanceType<typeof k8s.KubeConfig>);
     return new Promise((resolve, reject) => {
       let output = "";

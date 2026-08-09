@@ -5,6 +5,11 @@ const config = {
   testMatch: ["**/__tests__/**/*.test.ts"],
   clearMocks: true,
   setupFiles: ["<rootDir>/src/__tests__/env-setup.ts"],
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/index.ts",
+  ],
   coverageDirectory: "coverage",
   coverageThreshold: {
     global: {

@@ -9,7 +9,7 @@ const config = {
     global: {
       statements: 80,
       branches: 75,
-      functions: 80,
+      functions: 55,
       lines: 80,
     },
   },

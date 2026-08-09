@@ -3,7 +3,7 @@ jest.mock("pg", () => {
   return { Pool: jest.fn(() => mPool) };
 });
 
-import { UserRepository, ensureAdminUser } from "../auth/repository";
+import { UserRepository, ensureAdminUser, getUserRepository, resetUserRepository } from "../auth/repository";
 
 let repo: UserRepository;
 const users = new Map<string, any>();
@@ -91,6 +91,13 @@ beforeEach(() => {
     if (sql.includes("UPDATE users SET locked_until = NULL") && !sql.includes("failed_login_attempts")) {
       const user = users.get(email);
       if (user) user.locked_until = null;
+      return { rows: [], rowCount: user ? 1 : 0 };
+    }
+
+    // UPDATE SET must_change_password = false
+    if (sql.includes("must_change_password = false")) {
+      const user = users.get(email);
+      if (user) user.must_change_password = false;
       return { rows: [], rowCount: user ? 1 : 0 };
     }
 
@@ -295,5 +302,77 @@ describe("UserRepository — PostgreSQL persistence", () => {
 
     const found = await repo.findByEmail("deleted@example.com");
     expect(found).toBeNull();
+  });
+
+  it("should find a user by id", async () => {
+    if (!repo) return;
+
+    const user = await repo.create({
+      email: "byid@example.com",
+      password: "TestPassword123!",
+      name: "By ID",
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Pool } = require("pg");
+    const mockPool = new Pool() as { query: jest.Mock; connect: jest.Mock; end: jest.Mock };
+    mockPool.query.mockResolvedValueOnce({ rows: [user], rowCount: 1 });
+
+    const found = await repo.findById(user.id);
+    expect(found).not.toBeNull();
+    expect(found!.email).toBe("byid@example.com");
+  });
+
+  it("should return unlocked status when incrementing fails for missing user", async () => {
+    if (!repo) return;
+
+    const result = await repo.incrementFailedLogin("nobody@example.com");
+    expect(result).toEqual({ locked: false, attempts: 0 });
+  });
+
+  it("should clear must-change-password flag", async () => {
+    if (!repo) return;
+
+    const email = "clear@example.com";
+    await repo.create({ email, password: "TestPassword123!", name: "Clear", mustChangePassword: true });
+
+    await repo.clearMustChangePassword(email);
+
+    const found = await repo.findByEmail(email);
+    expect(found).not.toBeNull();
+    expect(found!.must_change_password).toBe(false);
+  });
+
+  it("should treat missing user as unlocked", async () => {
+    if (!repo) return;
+
+    const status = await repo.isLocked("nobody@example.com");
+    expect(status).toEqual({ locked: false, remainingMinutes: 0 });
+  });
+
+  it("should clear an expired lock", async () => {
+    if (!repo) return;
+
+    const email = "expired@example.com";
+    const user = await repo.create({ email, password: "TestPassword123!", name: "Expired" });
+    const pool = (repo as unknown as { pool: import("pg").Pool }).pool;
+    await pool.query(
+      "UPDATE users SET locked_until = $1 WHERE id = $2",
+      [new Date(Date.now() - 60 * 1000).toISOString(), user.id]
+    );
+    users.get(email)!.locked_until = new Date(Date.now() - 60 * 1000).toISOString();
+
+    const status = await repo.isLocked(email);
+    expect(status).toEqual({ locked: false, remainingMinutes: 0 });
+    expect(users.get(email)!.locked_until).toBeNull();
+  });
+
+  it("should return a singleton repository and reset it", async () => {
+    if (!repo) return;
+
+    const singleton = getUserRepository();
+    expect(singleton).toBeInstanceOf(UserRepository);
+    expect(getUserRepository()).toBe(singleton);
+    resetUserRepository();
   });
 });

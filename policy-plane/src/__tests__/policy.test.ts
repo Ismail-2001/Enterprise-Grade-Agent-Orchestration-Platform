@@ -1,6 +1,14 @@
 import nock from "nock";
 import crypto from "crypto";
-import { PolicyPlaneService, CircuitBreaker, LRUCache, hashInput } from "../service";
+import {
+  PolicyPlaneService,
+  CircuitBreaker,
+  LRUCache,
+  hashInput,
+  postJSON,
+  logDeny,
+  logInfo,
+} from "../service";
 import { verifyHS256JWT, extractNamespaceFromCN } from "../middleware";
 import type { PolicyInput } from "../service";
 
@@ -94,6 +102,34 @@ describe("PolicyPlaneService", () => {
     });
   });
 
+  describe("OPA returns invalid payload", () => {
+    it("should fail closed when OPA returns non-JSON body", async () => {
+      nock(OPA_HOST)
+        .post(`/v1/data/${POLICY_PATH}`)
+        .reply(200, "not-json-at-all");
+
+      const service = PolicyPlaneService.getInstance();
+      const decision = await service.evaluatePolicy(POLICY_PATH, makeInput());
+
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toContain("OPA call failed");
+    });
+  });
+
+  describe("OPA returns non-2xx", () => {
+    it("should fail closed when OPA returns HTTP 500", async () => {
+      nock(OPA_HOST)
+        .post(`/v1/data/${POLICY_PATH}`)
+        .reply(500, { error: "server error" });
+
+      const service = PolicyPlaneService.getInstance();
+      const decision = await service.evaluatePolicy(POLICY_PATH, makeInput());
+
+      expect(decision.allow).toBe(false);
+      expect(decision.reason).toContain("OPA returned HTTP 500");
+    });
+  });
+
   describe("Cache behavior", () => {
     it("should cache identical inputs and return cached result", async () => {
       const scope = nock(OPA_HOST)
@@ -111,6 +147,16 @@ describe("PolicyPlaneService", () => {
       expect(second.allow).toBe(true);
       expect(scope.isDone()).toBe(true);
       expect(nock.pendingMocks()).toHaveLength(0);
+    });
+  });
+
+  describe("Stats", () => {
+    it("should expose circuit state and cache size", () => {
+      const service = PolicyPlaneService.getInstance();
+      const stats = service.getStats();
+
+      expect(stats.circuitState).toBe("CLOSED");
+      expect(typeof stats.cacheSize).toBe("number");
     });
   });
 
@@ -217,6 +263,35 @@ describe("LRUCache", () => {
     expect(cache.get("key1")).toEqual({ allow: true, reason: "" });
     cache.dispose();
   });
+
+  it("should delete expired entries on get", async () => {
+    const cache = new LRUCache(10, 1);
+    cache.set("key1", { allow: true, reason: "" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(cache.get("key1")).toBeNull();
+    cache.dispose();
+  });
+
+  it("should evict expired entries via cleanup timer", () => {
+    jest.useFakeTimers();
+    const cache = new LRUCache(10, 1);
+    cache.set("key1", { allow: true, reason: "" });
+    cache.set("key2", { allow: false, reason: "denied" });
+    jest.advanceTimersByTime(6000);
+    expect(cache.get("key1")).toBeNull();
+    expect(cache.get("key2")).toBeNull();
+    expect(cache.size).toBe(0);
+    cache.dispose();
+    jest.useRealTimers();
+  });
+
+  it("should track size", () => {
+    const cache = new LRUCache(10, 60000);
+    expect(cache.size).toBe(0);
+    cache.set("key1", { allow: true, reason: "" });
+    expect(cache.size).toBe(1);
+    cache.dispose();
+  });
 });
 
 describe("CircuitBreaker", () => {
@@ -259,11 +334,69 @@ describe("CircuitBreaker", () => {
       setTimeout(() => {
         cb.canExecute();
         expect(cb.getState()).toBe("HALF_OPEN");
+        expect(cb.canExecute()).toBe(true);
         cb.recordSuccess();
         expect(cb.getState()).toBe("CLOSED");
         resolve();
       }, 5);
     });
+  });
+
+  it("should deny execution for an unknown circuit state", () => {
+    const cb = new CircuitBreaker(3, 1000);
+    (cb as unknown as { state: string }).state = "UNKNOWN";
+    expect(cb.canExecute()).toBe(false);
+  });
+});
+
+describe("logDeny", () => {
+  it("should write a denied entry to stderr outside test env", () => {
+    const spy = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      logDeny({
+        timestamp: new Date().toISOString(),
+        level: "denied",
+        subject: "default",
+        action: "execute",
+        resource: "default",
+        reason: "no",
+        agentId: "agent-1",
+        namespace: "default",
+      });
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("logInfo", () => {
+  it("should write an info entry to stdout outside test env", () => {
+    const spy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      logInfo("evaluation complete", { allow: true });
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("postJSON", () => {
+  it("should reject when OPA returns invalid JSON", async () => {
+    nock(OPA_HOST)
+      .post(`/v1/data/${POLICY_PATH}`)
+      .reply(200, "not-json");
+
+    await expect(
+      postJSON(`${OPA_HOST}/v1/data/${POLICY_PATH}`, { input: {} }, 500)
+    ).rejects.toThrow("OPA returned invalid JSON");
   });
 });
 

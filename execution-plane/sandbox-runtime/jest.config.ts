@@ -5,6 +5,11 @@ const config = {
   testMatch: ["**/__tests__/**/*.test.ts"],
   clearMocks: true,
   transformIgnorePatterns: ["/node_modules/(?!@kubernetes/client-node)/"],
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/index.ts",
+  ],
   coverageDirectory: "coverage",
   coverageThreshold: {
     global: {

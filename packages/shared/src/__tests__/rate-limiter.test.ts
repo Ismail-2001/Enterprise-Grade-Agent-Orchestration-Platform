@@ -75,3 +75,94 @@ describe("RateLimiter", () => {
     }
   });
 });
+
+describe("RateLimiter env defaults", () => {
+  const envBackup: Record<string, string | undefined> = {};
+
+  beforeAll(() => {
+    envBackup.RATE_LIMIT_RPM = process.env.RATE_LIMIT_RPM;
+    envBackup.RATE_LIMIT_WINDOW_MS = process.env.RATE_LIMIT_WINDOW_MS;
+    envBackup.RATE_LIMIT_CLEANUP_MS = process.env.RATE_LIMIT_CLEANUP_MS;
+  });
+
+  afterAll(() => {
+    for (const [k, v] of Object.entries(envBackup)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it("should read limits from env vars", () => {
+    process.env.RATE_LIMIT_RPM = "3";
+    process.env.RATE_LIMIT_WINDOW_MS = "5000";
+    const limiter = new RateLimiter();
+    try {
+      expect(limiter.check("agent-1").allowed).toBe(true);
+      expect(limiter.check("agent-1").allowed).toBe(true);
+      expect(limiter.check("agent-1").allowed).toBe(true);
+      expect(limiter.check("agent-1").allowed).toBe(false);
+    } finally {
+      limiter.dispose();
+    }
+  });
+
+  it("should fall back to defaults when env is unset", () => {
+    delete process.env.RATE_LIMIT_RPM;
+    delete process.env.RATE_LIMIT_WINDOW_MS;
+    const limiter = new RateLimiter();
+    try {
+      for (let i = 0; i < 60; i++) {
+        expect(limiter.check("agent-1").allowed).toBe(true);
+      }
+      expect(limiter.check("agent-1").allowed).toBe(false);
+    } finally {
+      limiter.dispose();
+    }
+  });
+});
+
+describe("RateLimiter cleanup", () => {
+  it("should prune expired timestamps and drop empty buckets", () => {
+    jest.useFakeTimers();
+    try {
+      const limiter = new RateLimiter(5, 1000);
+      limiter.check("agent-1");
+
+      const bucketsBefore = (limiter as any).buckets.size;
+      expect(bucketsBefore).toBe(1);
+
+      jest.advanceTimersByTime(60 * 1000 + 1);
+      (limiter as any).cleanup();
+
+      expect((limiter as any).buckets.size).toBe(0);
+      limiter.dispose();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("should keep buckets with recent timestamps during cleanup", () => {
+    jest.useFakeTimers();
+    try {
+      const limiter = new RateLimiter(5, 60 * 60 * 1000);
+      limiter.check("agent-1");
+      jest.advanceTimersByTime(1000);
+      (limiter as any).cleanup();
+      expect((limiter as any).buckets.size).toBe(1);
+      limiter.dispose();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("should dispose the cleanup interval", () => {
+    jest.useFakeTimers();
+    try {
+      const limiter = new RateLimiter(5, 1000);
+      limiter.dispose();
+      expect((limiter as any).cleanupTimer).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

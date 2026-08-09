@@ -360,4 +360,157 @@ describe("AgentRepository — PostgreSQL persistence", () => {
       await repo2.close();
     }
   });
+
+  it("should find an agent by id", async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "by-id", namespace: "default", name: "by-id-agent" })],
+      rowCount: 1,
+    });
+
+    const found = await repo.findById("by-id");
+    expect(found).not.toBeNull();
+    expect(found!.name).toBe("by-id-agent");
+  });
+
+  it("should update annotations along with spec and labels", async () => {
+    mockPool.query.mockImplementation((_sql: string, params?: unknown[]) =>
+      Promise.resolve(makeInsertRow(params))
+    );
+
+    await repo.create({ namespace: "annot-ns", name: "annot-me" });
+
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "annot-id", namespace: "annot-ns", name: "annot-me", annotations: { team: "old" }, version: 1 })],
+      rowCount: 1,
+    });
+    mockPool.query.mockResolvedValueOnce({ rows: [{ id: "snap-id" }], rowCount: 1 });
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "annot-id", namespace: "annot-ns", name: "annot-me", annotations: { team: "new" }, version: 2 })],
+      rowCount: 1,
+    });
+
+    const updated = await repo.update("annot-ns", "annot-me", {
+      annotations: { team: "new" },
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.annotations).toEqual({ team: "new" });
+    expect(updated!.version).toBe(2);
+  });
+
+  it("should return current agent when update has no changes", async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "noop-id", namespace: "noop-ns", name: "noop-agent", version: 3 })],
+      rowCount: 1,
+    });
+    mockPool.query.mockResolvedValueOnce({ rows: [{ id: "snap-id" }], rowCount: 1 });
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "noop-id", namespace: "noop-ns", name: "noop-agent", version: 3 })],
+      rowCount: 1,
+    });
+
+    const updated = await repo.update("noop-ns", "noop-agent", {});
+    expect(updated).not.toBeNull();
+    expect(updated!.version).toBe(3);
+  });
+
+  it("should throw INVALID_ARGUMENT for an invalid label key", async () => {
+    await expect(
+      repo.listByNamespace("default", { labels: { "Invalid Key!": "x" } })
+    ).rejects.toThrow("Invalid label key");
+  });
+
+  function makeVersionRow(overrides?: Record<string, unknown>) {
+    return {
+      id: "v1",
+      agent_id: "a1",
+      namespace: "default",
+      name: "test-agent",
+      version: 1,
+      spec: {},
+      labels: {},
+      annotations: {},
+      created_by: "system",
+      created_at: new Date().toISOString(),
+      change_summary: "Updated to v1",
+      ...overrides,
+    };
+  }
+
+  it("should get version history", async () => {
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeVersionRow(), makeVersionRow({ version: 2 })],
+      rowCount: 2,
+    });
+
+    const history = await repo.getVersionHistory("default", "test-agent", 10);
+    expect(history).toHaveLength(2);
+    expect(history[0]!.version).toBe(1);
+    expect(history[1]!.version).toBe(2);
+  });
+
+  it("should get a specific version", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [makeVersionRow({ version: 2 })], rowCount: 1 });
+
+    const version = await repo.getVersion("default", "test-agent", 2);
+    expect(version).not.toBeNull();
+    expect(version!.version).toBe(2);
+  });
+
+  it("should return null when a version does not exist", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const version = await repo.getVersion("default", "test-agent", 99);
+    expect(version).toBeNull();
+  });
+
+  it("should create a version snapshot", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [makeVersionRow({ change_summary: "Initial" })], rowCount: 1 });
+
+    const snapshot = await repo.createVersionSnapshot(
+      "a1", "default", "test-agent", 1, {}, {}, {}, "system", "Initial"
+    );
+    expect(snapshot).not.toBeNull();
+    expect(snapshot.change_summary).toBe("Initial");
+  });
+
+  it("should roll back an agent to a target version", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [makeVersionRow({ spec: { model: "old" } })], rowCount: 1 });
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "rb-id", namespace: "rollback-ns", name: "rb-agent", version: 2, spec: { model: "new" } })],
+      rowCount: 1,
+    });
+    mockPool.query.mockResolvedValueOnce({ rows: [{ id: "snap-id" }], rowCount: 1 });
+    mockPool.query.mockResolvedValueOnce({
+      rows: [makeSelectRow({ id: "rb-id", namespace: "rollback-ns", name: "rb-agent", version: 3, spec: { model: "old" } })],
+      rowCount: 1,
+    });
+
+    const rolledBack = await repo.rollbackToVersion("rollback-ns", "rb-agent", 1);
+    expect(rolledBack).not.toBeNull();
+    expect(rolledBack!.version).toBe(3);
+    expect(rolledBack!.spec).toEqual({ model: "old" });
+  });
+
+  it("should return null when rolling back to a missing version", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const rolledBack = await repo.rollbackToVersion("rollback-ns", "rb-agent", 99);
+    expect(rolledBack).toBeNull();
+  });
+
+  it("should return null when rolling back a missing agent", async () => {
+    mockPool.query.mockResolvedValueOnce({ rows: [makeVersionRow()], rowCount: 1 });
+    mockPool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const rolledBack = await repo.rollbackToVersion("rollback-ns", "missing-agent", 1);
+    expect(rolledBack).toBeNull();
+  });
+
+  it("should ensure the version table exists", async () => {
+    mockPool.query.mockResolvedValue({ rowCount: 0 });
+
+    await repo.ensureVersionTable();
+    expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining("CREATE TABLE IF NOT EXISTS agent_versions"));
+  });
 });

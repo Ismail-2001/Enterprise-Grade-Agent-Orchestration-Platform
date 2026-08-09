@@ -4,6 +4,10 @@ import {
   reencryptWithNewKey,
   hashPassword,
   comparePassword as verifyPassword,
+  signJWT,
+  verifyJWT,
+  generateNonce,
+  hashForCache,
 } from "../crypto/index.js";
 
 describe("Crypto Module", () => {
@@ -64,6 +68,76 @@ describe("Crypto Module", () => {
       const hash = await hashPassword("correct-password");
       const valid = await verifyPassword("wrong-password", hash);
       expect(valid).toBe(false);
+    });
+
+    it("should reject a malformed stored hash", async () => {
+      expect(await verifyPassword("pw", "not-a-scrypt-hash")).toBe(false);
+      expect(await verifyPassword("pw", "scrypt:1:2:3")).toBe(false);
+    });
+  });
+
+  describe("generateNonce / hashForCache", () => {
+    it("should generate a 12-byte nonce", () => {
+      const nonce = generateNonce();
+      expect(nonce).toHaveLength(12);
+    });
+
+    it("should hash objects canonically", () => {
+      const h1 = hashForCache({ b: 1, a: 2 });
+      const h2 = hashForCache({ a: 2, b: 1 });
+      expect(h1).toBe(h2);
+      expect(h1).toMatch(/^[a-f0-9]{64}$/);
+    });
+  });
+
+  describe("signJWT / verifyJWT", () => {
+    const claims = {
+      sub: "user-1",
+      email: "a@b.com",
+      name: "A",
+      role: "admin",
+      namespace_access: ["default"],
+    };
+
+    it("should sign and verify a token", () => {
+      const token = signJWT(claims, "secret", 3600);
+      const decoded = verifyJWT(token, "secret");
+      expect(decoded?.sub).toBe("user-1");
+      expect(decoded?.role).toBe("admin");
+    });
+
+    it("should default to 86400s expiry", () => {
+      const token = signJWT(claims, "secret");
+      const decoded = verifyJWT(token, "secret");
+      expect(decoded?.exp).toBeDefined();
+      expect(decoded && decoded.exp - decoded.iat).toBe(86400);
+    });
+
+    it("should return null for a malformed token", () => {
+      expect(verifyJWT("not-a-jwt", "secret")).toBeNull();
+      expect(verifyJWT("a.b", "secret")).toBeNull();
+    });
+
+    it("should return null for a tampered signature", () => {
+      const token = signJWT(claims, "secret", 3600);
+      const [h, p, _s] = token.split(".");
+      expect(verifyJWT(`${h}.${p}.AA${_s?.slice(2)}`, "secret")).toBeNull();
+    });
+
+    it("should return null for a token signed with the wrong secret", () => {
+      const token = signJWT(claims, "secret", 3600);
+      expect(verifyJWT(token, "other-secret")).toBeNull();
+    });
+
+    it("should verify with the old secret as a fallback", () => {
+      const token = signJWT(claims, "old-secret", 3600);
+      const decoded = verifyJWT(token, "new-secret", "old-secret");
+      expect(decoded?.sub).toBe("user-1");
+    });
+
+    it("should reject an expired token", () => {
+      const token = signJWT(claims, "secret", -10);
+      expect(verifyJWT(token, "secret")).toBeNull();
     });
   });
 });
