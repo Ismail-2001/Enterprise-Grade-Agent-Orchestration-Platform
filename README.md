@@ -17,7 +17,7 @@
 [![Security Scan](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/security-scan.yml?branch=main&label=security%20scan&style=flat-square)](.github/workflows/security-scan.yml)
 [![Tests](https://img.shields.io/badge/tests-360%20passing-brightgreen?style=flat-square)](#quality-gates)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen?style=flat-square)](SECURITY.md)
-[![Readiness](https://img.shields.io/badge/production%20readiness-97%25-brightgreen?style=flat-square)](#production-readiness)
+[![Readiness](https://img.shields.io/badge/production%20readiness-79.5%25-yellowgreen?style=flat-square)](docs/FAANG-AUDIT-REPORT.md)
 [![Helm](https://img.shields.io/badge/Helm-11%20sub--charts-blue?style=flat-square)](charts/e-gaop/)
 [![Security Audit](https://img.shields.io/badge/security%20audit-passed-brightgreen?style=flat-square)](#security-audit)
 [![Last commit](https://img.shields.io/github/last-commit/Ismail-2001/The-Kubernetes-of-AI-Agents?style=flat-square)](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents)
@@ -80,7 +80,7 @@ Client → API Server (JWT auth, rate-limit, CORS)
 | **Distributed systems** | 10 microservices across 5 planes — gRPC + REST + WebSocket, Temporal durable workflows, circuit breakers, connection pooling, dead-letter queues. Not a single-file agent demo. |
 | **Security depth** | Defense-in-depth: JWT auth, AES-256-GCM at rest (V2 only), OPA/Rego policy enforcement, PII scanning, SSRF blocking, per-user rate limiting, namespace isolation, 0 CVEs (19 fixed). Full penetration test completed with 6 critical/high findings remediated. |
 | **Operational maturity** | CI/CD (31+ jobs, all green), database migrations (8 up + 7 down), Helm charts with HPA/PDB/NetworkPolicy/ServiceMonitor, canary deployments, backup/restore (3/3 cycles verified). |
-| **Engineering honesty** | Published [production-readiness assessment](docs/production-readiness-final.md) with scored gaps. Every claim verified against running code. Corrections documented. |
+| **Engineering honesty** | Published [FAANG-level audit](docs/FAANG-AUDIT-REPORT.md) with independently-derived 79.5% score and traceable phase history. Every claim verified against running code. Corrections documented — including walking back an unsupported "multi-tenant production" claim to "pilot workloads". |
 | **AI/LLM depth** | Multi-model routing (OpenAI + Claude + Ollama), 3-model fallback chain, circuit breaker (opossum), concurrency semaphore (25 at 100%), agent versioning with rollback, 89.5% eval pass rate. |
 
 **Built by one engineer.** 15,000+ lines of TypeScript. 10 npm workspaces. 22 Docker services. 8 database migrations. 360 tests. MIT Licensed.
@@ -413,17 +413,17 @@ Full penetration test completed. 23 findings identified across auth, crypto, inj
 
 ## Production Readiness
 
-**97% production readiness** — 56 scored items across 7 categories. Full assessment: [`docs/production-readiness-final.md`](docs/production-readiness-final.md).
+**79.5% production readiness** (7.95/10) — independently derived across 10 categories with a traceable phase history (6.35 → 7.95 across 4 remediation phases). Canonical assessment: [`docs/FAANG-AUDIT-REPORT.md`](docs/FAANG-AUDIT-REPORT.md).
 
-| Area | Score | Grade | What works |
-|------|-------|-------|------------|
-| Functional Completeness | 96.4% | A | Agent CRUD, multi-model LLM, sandboxed tool execution, agent versioning with rollback |
-| Reliability | 95.5% | A | Concurrency semaphore, circuit breaker, dead-letter queue, HTTP caching, backup 3/3 |
-| Security | 98.0% | A+ | TLS, JWT, WebSocket auth, OPA, AES-256-GCM (V2), PII blocking, SSRF protection, 0 CVEs, gVisor, sandboxed code execution, pinned Docker images, PostgreSQL audit persistence |
-| Observability | 92.9% | A- | OTel tracing, Prometheus, Grafana (5 alerts), ServiceMonitors for all services |
-| Operability | 100% | A+ | CI 17/17, Helm charts (HPA, PDB, NetworkPolicy, canary), migrations, pre-commit hooks |
-| Compliance | 85.0% | B+ | OpenAPI 3.0.3, 8 database migrations, full audit trail, PostgreSQL-persisted audit chain |
-| Agent Quality | 91.7% | A- | 37-case golden dataset (11 categories), multi-turn support, automated runner |
+**Scope: pilot workloads.** The platform is verified safe for single-tenant pilot deployments and private staging. Multi-tenant production readiness has not been load-tested and is explicitly out of scope for this score.
+
+| Category | Score | Key strengths |
+|----------|-------|---------------|
+| Architecture & Design | 8/10 | 5-plane separation, gRPC + REST, Temporal, OPA, pgvector |
+| Security | 7/10 | 5 Critical + 17 High remediated, defense-in-depth, prompt injection detection |
+| Testing | 9/10 | 389+ tests, contract tests, chaos resilience, k6 load test, coverage reporting |
+| Deployment & CI/CD | 9/10 | Helm (HPA/PDB/NetworkPolicy), ArgoCD GitOps, CI 17/17 |
+| Operability & DX | 10/10 | Docker compose, runbooks, developer guide, chaos tests, migration verification |
 
 ---
 
@@ -587,6 +587,6 @@ Karachi, Pakistan · Anthropic MCP-certified · BS AI, FAST-NUCES
 
 **Star · Fork · Break · Contribute**
 
-[Open an issue](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/issues) · [Read the full assessment](docs/production-readiness-final.md)
+[Open an issue](https://github.com/Ismail-2001/The-Kubernetes-of-AI-Agents/issues) · [Read the canonical audit](docs/FAANG-AUDIT-REPORT.md)
 
 </div>

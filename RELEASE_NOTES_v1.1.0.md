@@ -34,7 +34,7 @@
 ### Highlights
 - 360+ unit tests passing across 10 npm workspaces
 - 0 known CVEs (19 fixed)
-- 97% production-readiness score (56 scored items)
+- 79.5% production-readiness score (FAANG audit, 10 categories, pilot workloads scope)
 - 37 eval cases, 89.5%+ pass rate on prior baseline
 - CI: 17/17 jobs green · Security scan: 14/14 jobs green
 - Helm: 11 sub-charts with HPA, PDB, NetworkPolicy, canary

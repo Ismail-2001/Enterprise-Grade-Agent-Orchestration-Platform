@@ -1,8 +1,14 @@
 # E-GAOP Production-Readiness Assessment — Final
 
-**Score: 97.0%** (weighted, 56 items across 7 categories)
+> **DEPRECATED — Superseded by `docs/FAANG-AUDIT-REPORT.md` (2026-08-12).**
+> This document's 97.0% score is unreconciled with the FAANG audit's independently-derived
+> 7.95/10 (79.5%) score, which has a traceable phase-by-phase history tied to specific
+> remediation commits. The FAANG audit is now the canonical readiness assessment.
+> This file is retained for historical reference only. Do not cite it as authoritative.
+
+**Previous score: 97.0%** (see FAANG-AUDIT-REPORT.md for current canonical score)
 **Last updated:** 2026-08-03
-**Status:** Safe for demo, single-user pilot, staging, and multi-tenant production (with secrets configured). NOT safe for unmonitored deployment or workloads requiring vulnerability clearance.
+**Status:** Superseded — see FAANG-AUDIT-REPORT.md
 
 > **One-paragraph summary for external use**
 >

@@ -1,9 +1,10 @@
 # E-GAOP Production-Readiness Score — Final Recalculation (Jul 13, 2026)
 
-> **DEPRECATED — Superseded by `docs/production-readiness-final.md` (Jul 19, 2026).**
+> **DEPRECATED — Superseded by `docs/FAANG-AUDIT-REPORT.md` (2026-08-12).**
 > This document contains multiple conflicting scores (83.5%, 80.4%, 80.3%, 79.3%, 81.5%)
 > and two claims (vulnerability scanning, CI/CD pipeline) later found to be unsupported.
-> The authoritative single-number assessment is 77.6% in the final document.
+> The intermediate `production-readiness-final.md` is also deprecated.
+> The canonical readiness assessment is now `docs/FAANG-AUDIT-REPORT.md` (7.95/10, 79.5%).
 > Do not reference this file as authoritative.
 
 **Previous score: 72.8%**
