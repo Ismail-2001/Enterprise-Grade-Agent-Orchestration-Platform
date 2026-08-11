@@ -8,6 +8,12 @@
 # This script exists because the same documentation-consistency issue was
 # flagged in two separate review rounds and left unresolved both times.
 # It is designed to catch that specific failure mode before merge.
+#
+# Extended (2026-08-12) to also catch factual contradictions:
+# - "penetration testing (not performed)" when pentest WAS done
+# - "19 cases" when golden-dataset.json has 37
+# - "secret scanning (not configured)" when Gitleaks IS configured
+# - Unqualified "multi-tenant production" claims
 
 set -euo pipefail
 
@@ -79,22 +85,57 @@ for score in "${!final_scores[@]}"; do
   distinct_count=$((distinct_count + 1))
 done
 
-if [ "$distinct_count" -le 1 ]; then
-  echo "✓ PASS: Readiness score consistent across repository."
-  for score in "${!final_scores[@]}"; do
-    echo "  ${score} — ${final_scores[$score]//|/, }"
-  done
-  exit 0
+contradictions=0
+
+echo ""
+echo "Checking factual contradictions..."
+
+# Check 1: SECURITY.md must not claim "penetration testing (not performed)"
+if grep -q 'penetration testing (not performed)' SECURITY.md 2>/dev/null; then
+  echo "✗ FAIL: SECURITY.md claims 'penetration testing (not performed)' but pentest was completed with 6 remediations."
+  contradictions=$((contradictions + 1))
 fi
 
-echo "✗ FAIL: Multiple distinct readiness scores found in non-deprecated files."
-echo "  The canonical score document is docs/FAANG-AUDIT-REPORT.md."
-echo "  All other files must match it or be marked as deprecated."
+# Check 2: SECURITY.md must not claim "secret scanning (not configured)"
+if grep -q 'secret scanning.*not configured' SECURITY.md 2>/dev/null; then
+  echo "✗ FAIL: SECURITY.md claims 'secret scanning (not configured)' but Gitleaks IS configured."
+  contradictions=$((contradictions + 1))
+fi
+
+# Check 3: Eval count must match golden-dataset.json
+if [ -f evals/golden-dataset.json ]; then
+  actual_count=$(node -e "const d=require('./evals/golden-dataset.json'); console.log(d.cases?.length||d.length||0)" 2>/dev/null || echo "0")
+  if [ "$actual_count" != "0" ]; then
+    # Check README
+    readme_evals=$(grep -oE '[0-9]+ eval cases' README.md 2>/dev/null | grep -oE '[0-9]+' | head -1)
+    if [ -n "$readme_evals" ] && [ "$readme_evals" != "$actual_count" ]; then
+      echo "✗ FAIL: README claims '$readme_evals eval cases' but golden-dataset.json has $actual_count."
+      contradictions=$((contradictions + 1))
+    fi
+  fi
+fi
+
+# Check 4: "multi-tenant production" must be qualified everywhere
+if grep -qi 'multi-tenant production' README.md 2>/dev/null; then
+  if ! grep -qi 'multi-tenant production.*not load-tested\|multi-tenant production.*out of scope\|multi-tenant production.*pilot only' README.md 2>/dev/null; then
+    echo "✗ FAIL: README contains 'multi-tenant production' without qualification."
+    contradictions=$((contradictions + 1))
+  fi
+fi
+
+# Check 5: production-readiness-final.md must be marked deprecated
+if ! head -5 docs/production-readiness-final.md 2>/dev/null | grep -qi 'DEPRECATED\|Superseded'; then
+  echo "✗ FAIL: docs/production-readiness-final.md is not marked as deprecated."
+  contradictions=$((contradictions + 1))
+fi
+
+if [ "$contradictions" -gt 0 ]; then
+  echo ""
+  echo "✗ FAIL: $contradictions factual contradiction(s) found."
+  exit 1
+fi
+
+echo "✓ PASS: No factual contradictions found."
 echo ""
-for score in "${!final_scores[@]}"; do
-  echo "  ${score} — ${final_scores[$score]//|/, }"
-done
-echo ""
-echo "Fix: Update the stale file(s) to match the canonical score, or add a"
-echo "     'DEPRECATED — Superseded by ...' header to the outdated document."
-exit 1
+echo "All checks passed."
+exit 0

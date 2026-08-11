@@ -15,7 +15,7 @@
 [![Node](https://img.shields.io/badge/node-24-339933?style=flat-square&logo=node.js&logoColor=white)](.github/workflows/ci.yml)
 [![CI](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/ci.yml?branch=main&label=CI&style=flat-square)](.github/workflows/ci.yml)
 [![Security Scan](https://img.shields.io/github/actions/workflow/status/Ismail-2001/The-Kubernetes-of-AI-Agents/security-scan.yml?branch=main&label=security%20scan&style=flat-square)](.github/workflows/security-scan.yml)
-[![Tests](https://img.shields.io/badge/tests-360%20passing-brightgreen?style=flat-square)](#quality-gates)
+[![Tests](https://img.shields.io/badge/tests-812%20passing-brightgreen?style=flat-square)](#quality-gates)
 [![Vulnerabilities](https://img.shields.io/badge/vulnerabilities-0%20CVEs-brightgreen?style=flat-square)](SECURITY.md)
 [![Readiness](https://img.shields.io/badge/production%20readiness-79.5%25-yellowgreen?style=flat-square)](docs/FAANG-AUDIT-REPORT.md)
 [![Helm](https://img.shields.io/badge/Helm-11%20sub--charts-blue?style=flat-square)](charts/e-gaop/)

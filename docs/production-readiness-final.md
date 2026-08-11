@@ -12,7 +12,9 @@
 
 > **One-paragraph summary for external use**
 >
-> E-GAOP is an agent-orchestration platform that manages the full lifecycle of AI agent execution — routing LLM requests (OpenAI + Anthropic Claude + Ollama with 3-model fallback), enforcing OPA-based authorization, executing tool calls in Docker-sandboxed runtimes (gVisor default), and tracking every step via Temporal workflows. The core loop works reliably: evals show 89.5% task success across 19 cases, the system sustains 25 concurrent agents at 100% success, and all 11 services have health checks, structured logging, OpenTelemetry tracing, and firing Grafana alerts. Critical gaps closed: 0 CVEs (19 fixed), OPA CrashLoopBackOff resolved (5 root causes), PII scan blocks requests, namespace-aware rate limiting, security headers, body limit, multi-model LLM with circuit breaker, WebSocket streaming, agent versioning with rollback, gVisor sandbox isolation, OpenAPI 3.0.3 spec, per-user rate limiting. All 3 workflows are green: CI 17/17, Security Scan 14/14, Deploy dry-run passes. Production hardening: NetworkPolicy (default-deny + postgres/redis ingress), ServiceAccount + RBAC (all services), pod security (runAsNonRoot, readOnlyRootFilesystem, no privilege escalation), HPA tuning (configurable min/max replicas, production behavior), ServiceMonitors (OPA, otel-collector, all 9 services), canary deployment template, circuit breaker wired to Helm. Performance baselines: 14,532 req/s `/api/agents`, 189,743 req/s `/health`. TLS encryption active; mTLS opt-in (`MTLS_ENABLED=true`) blocked by upstream @grpc/grpc-js client-cert bug (verified empirically — server-side enforcement works, but grpc-js client cannot complete HTTP/2 handshake with a valid cert). No penetration testing performed.
+> **DEPRECATED — This 97% score is unreconciled with the FAANG audit's 79.5% score. See `docs/FAANG-AUDIT-REPORT.md` for the canonical assessment.**
+>
+> E-GAOP is an agent-orchestration platform that manages the full lifecycle of AI agent execution — routing LLM requests (OpenAI + Anthropic Claude + Ollama with 3-model fallback), enforcing OPA-based authorization, executing tool calls in gVisor-sandboxed runtimes, and tracking every step via Temporal workflows. The core loop works reliably: 37 eval cases across 11 categories, the system sustains 25 concurrent agents at 100% success, and all 11 services have health checks, structured logging, OpenTelemetry tracing, and firing Grafana alerts. Security: 0 CVEs (19 fixed), independent audit completed with 5 Critical + 17 High remediations, penetration testing performed with 6 findings remediated, PII scan blocks requests, prompt injection detection active. All 3 workflows green: CI 17/17, Security Scan 14/14. Production hardening: NetworkPolicy (default-deny), ServiceAccount + RBAC, pod security (runAsNonRoot, readOnlyRootFilesystem), HPA, canary deployments, circuit breaker. TLS encryption active; mTLS blocked by upstream @grpc/grpc-js bug. **Score superseded — see FAANG audit for current readiness assessment.**
 
 ---
 
@@ -44,12 +46,12 @@ The verification history itself is a feature: the fact that independent re-testi
 | 2 | Agent spec/versioning | 2 | Versioned agent specs in Postgres; `migrations/008_agent_versions.sql` with `createVersionSnapshot`, `rollbackToVersion`, `getVersionHistory`, `getVersionById`. Repository pattern in `control-plane/api-server/src/auth/repository.ts` |
 | 3 | Workflow execution start | 2 | Temporal workflow via `POST /api/agents/:id/run` — eval runner triggers workflow and polls Temporal |
 | 4 | LLM model routing (multi-model) | 2 | OpenAI + Anthropic Claude + Ollama with 3-model fallback chain. `preferredModel` populated, circuit breaker with opossum (50% threshold, 30s reset). Source: `execution-plane/llm-router/src/index.ts` |
-| 5 | LLM generation (call & response) | 2 | Verified across all eval runs (RL-1 through RL-4: 19 cases each). Real OpenAI/Anthropic/OpenRouter calls return responses |
+| 5 | LLM generation (call & response) | 2 | Verified across all eval runs. Real OpenAI/Anthropic/OpenRouter calls return responses |
 | 6 | Tool call generation | 2 | Native OpenAI `tools` parameter with `tool_call_id` + `role:"tool"` messages. `react-workflow.ts` parses both `[tool:]` format and OpenAI native `tool_calls` |
 | 7 | Tool execution in sandbox | 2 | Real Python execution in Docker containers. Sandbox lifecycle: create (HTTP 201), exec (HTTP 201), terminate (HTTP 204). gVisor isolation default |
 | 8 | Tool result ingestion | 2 | `role:"user"` fix eliminated 400 errors. Zero 400 errors across all repeat runs and load tests |
 | 9 | ReAct iteration loop | 2 | Multi-iteration workflows verified: 5 iterations with 2 tool calls, 7 iterations with 1 tool call |
-| 10 | Final answer generation | 2 | `[FINAL ANSWER]` pattern in all successful workflows. RL-2 baseline: 16/19 cases correct |
+| 10 | Final answer generation | 2 | `[FINAL ANSWER]` pattern in all successful workflows. |
 | 11 | Structured tool-calling schema | 2 | Native OpenAI `tools` with `tool_call_id` + `role:"tool"` — verified 6/6 concurrent runs in load test |
 | 12 | Natural-language tool triggering | 2 | Model organically calls tools via structured `tool_calls` without `[tool:]` format |
 | 13 | WebSocket streaming | 2 | Real-time execution streaming via `ws`. WebSocket endpoint on API server for live workflow updates |
@@ -128,7 +130,7 @@ The verification history itself is a feature: the fact that independent re-testi
 
 | # | Item | Score | Evidence |
 |---|---|---|---|
-| 1 | Golden eval dataset | 2 | 19 cases across 7 categories. Schema v1.0. File: `evals/golden-dataset.json` |
+| 1 | Golden eval dataset | 2 | 37 cases across 11 categories. Schema v1.0. File: `evals/golden-dataset.json` |
 | 2 | Eval runner | 2 | `evals/run-evals.mjs` (327 lines): API login → trigger workflow → poll Temporal → score |
 | 3 | Automatic scoring | 2 | `exact_pattern`, `numeric_tolerance`, `rule_based`. Tool selection accuracy clamped [0,1] |
 | 4 | Regression comparison | 2 | `evals/compare-evals.mjs`: side-by-side analysis, per-case regression detection |
@@ -216,8 +218,8 @@ The verification history itself is a feature: the fact that independent re-testi
 
 ### Open (partial or not started)
 1. **Staging deploy blocked on secrets** — 10 GitHub secrets must be configured. Deploy workflow gated on `STAGING_HOST`. Priority: high.
-2. **No penetration testing** — No injection testing, fuzzing, or red-team exercise. Priority: medium.
-3. **Eval infra contamination** — ~2/19 failures from OpenRouter saturation, not agent defects. Baselines need regeneration. Priority: medium.
+2. ~~**No penetration testing**~~ — **Completed.** 6 findings identified and remediated (V1 crypto removal, WebSocket JWT, Docker tag pinning).
+3. **Eval infra contamination** — Baselines need regeneration. Priority: medium.
 4. **Dashboard rendering unverified** — Grafana dashboards exist but not visually verified. Priority: low.
 5. **Docker layer caching** — Full image rebuilds on every CI run. Priority: low.
 
@@ -225,17 +227,17 @@ The verification history itself is a feature: the fact that independent re-testi
 
 ## Is this production ready?
 
-**Yes — at 97%, it's production-ready for demo, pilot, staging, and multi-tenant production.**
+~~**Yes — at 97%, it's production-ready for demo, pilot, staging, and multi-tenant production.**~~ **DEPRECATED — Score superseded by FAANG audit (79.5%). See `docs/FAANG-AUDIT-REPORT.md` for current assessment.**
 
-Here's what the 97.0% means concretely:
+Here's what this document previously claimed:
 
-**Safe to demo to a client or interviewer:** The core loop works end-to-end. You can start a workflow, watch it route through the LLM (OpenAI + Claude + Ollama), execute tool calls in a gVisor-sandboxed runtime, and produce an answer — all with live OPA policy enforcement, TLS encryption, PII scan blocking, per-user rate limiting, WebSocket streaming, agent versioning, structured logging, Prometheus metrics, OpenTelemetry tracing, Grafana dashboards, and firing alerts. The eval suite shows 89.5% task success across 19 diverse cases. The system handles 25 concurrent agents at 100% success.
+**Safe to demo to a client or interviewer:** The core loop works end-to-end. You can start a workflow, watch it route through the LLM (OpenAI + Claude + Ollama), execute tool calls in a gVisor-sandboxed runtime, and produce an answer — all with live OPA policy enforcement, TLS encryption, PII scan blocking, per-user rate limiting, WebSocket streaming, agent versioning, structured logging, Prometheus metrics, OpenTelemetry tracing, Grafana dashboards, and firing alerts. The eval suite covers 37 cases across 11 categories. The system handles 25 concurrent agents at 100% success.
 
-**Safe to pilot with a real workload:** A multi-tenant deployment under careful observation is viable. The backup/restore system is tested (3/3 cycles). Alerting works. The Helm chart installs cleanly with HPA, PDB, NetworkPolicy, ServiceMonitors, RBAC, migration Job, and canary template. Dead-letter queue captures workflow failures. CI/CD pipeline runs dry-run successfully.
+**Safe to pilot with a real workload:** A single-tenant pilot under careful observation is viable. Multi-tenant production has not been load-tested. The backup/restore system is tested (3/3 cycles). Alerting works. The Helm chart installs cleanly with HPA, PDB, NetworkPolicy, ServiceMonitors, RBAC, migration Job, and canary template. Dead-letter queue captures workflow failures. CI/CD pipeline runs dry-run successfully.
 
 **Safe for production with secrets configured:** The platform has all production infrastructure: NetworkPolicy (default-deny), ServiceAccount + RBAC, pod security (runAsNonRoot, readOnlyRootFilesystem), HPA with production behavior, ServiceMonitors, canary deployments, circuit breaker, Redis Sentinel HA, multi-model fallback, gVisor isolation. The only operational gap is the 10 GitHub secrets for automated staging deploy.
 
-**Not safe for:** Unmonitored deployment, workloads requiring vulnerability clearance (no penetration testing), running without configured secrets.
+**Not safe for:** Unmonitored deployment, multi-tenant production (not load-tested), running without configured secrets.
 
 **What changed since 86%:**
 - Multi-model LLM (OpenAI + Anthropic + Ollama) with 3-model fallback and circuit breaker
@@ -262,5 +264,5 @@ Here's what the 97.0% means concretely:
 1. Configure 10 GitHub secrets → automated staging deploy
 2. Run `scripts/provision-staging.sh` on a bare VM
 3. Push to main → verify full Deploy workflow
-4. Penetration testing (optional but recommended)
+4. ~~Penetration testing (optional but recommended)~~ — **Completed.** 6 findings remediated.
 5. Regenerate eval baselines with multi-model LLM (optional)

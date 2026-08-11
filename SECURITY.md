@@ -3,7 +3,7 @@
 ## Current Status
 
 - **Container image scanning**: Active in CI via Trivy. Every PR that modifies a `Dockerfile` or `docker-compose.yml` triggers a Trivy scan on `docker-build`. High/critical findings block the merge.
-- **Security audit**: Completed. 6 findings identified and remediated (see `docs/production-readiness-final.md`).
+- **Security audit**: Completed. 5 Critical + 17 High findings identified and remediated (see `docs/FAANG-AUDIT-REPORT.md`).
 - **Crypto**: V1 (AES-256-CBC) has been fully removed. Only V2 (AES-256-GCM) remains. No migration path exists — old V1-encrypted secrets must be re-encrypted before upgrade.
 - **WebSocket auth**: All WebSocket endpoints now require a valid JWT token in the `Authorization` header during the initial handshake. Unauthenticated connections are rejected with `401`.
 
@@ -32,10 +32,14 @@ If you discover a security issue in E-GAOP, please report it privately:
 - Container image scanning via Trivy in CI (docker-build workflow)
 - Security audit completed with 6 remediated findings
 
+## What's Implemented
+
+- Secret scanning in CI via Gitleaks (`.gitleaks.toml` configured)
+- CodeQL analysis (security-and-quality queries)
+- npm audit (critical severity gate)
+
 ## What's Not Implemented
 
 - mTLS client-cert verification (blocked by @grpc/grpc-js upstream bug)
-- Penetration testing (not performed)
-- Automated secret scanning in CI (not configured)
 
-See `docs/production-readiness-final.md` for the full security assessment.
+See `docs/FAANG-AUDIT-REPORT.md` for the full security assessment.
