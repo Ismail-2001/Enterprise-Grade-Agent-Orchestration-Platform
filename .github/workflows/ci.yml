@@ -58,6 +58,17 @@ jobs:
             echo "ℹ .env.example exists — verify it stays in sync with .env"
           fi
 
+  docs-consistency:
+    name: Docs Consistency
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check readiness score consistency
+        run: |
+          chmod +x scripts/check-readiness-score.sh
+          scripts/check-readiness-score.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-22.04
